@@ -9,12 +9,9 @@ module.exports = {
         const user = interaction.user;
         const embed = new EmbedBuilder()
             .setTitle(`${user.username}'s avatar!`)
+            .setColor('LuminousVividPink')
             .setImage(`${user.displayAvatarURL({size: 1024, format: 'png', dynamic: true})}`)
-            // .setURL(user.displayAvatarURL());
-            // .setTimestamp();
-            .setFooter({text: `made by ${user.username}`, iconURL: `${user.displayAvatarURL()}`});
 
-		// interaction.guild is the object representing the Guild in which the command was run
 		await interaction.reply({ embeds: [embed] });
 	},
 };

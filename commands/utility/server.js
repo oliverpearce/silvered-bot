@@ -15,7 +15,7 @@ module.exports = {
 				{ name: 'Users', value: `${interaction.guild.memberCount - numBots}` , inline: true},
 				{ name: 'Bots', value: `${numBots}`, inline: true },
 				{ name: 'Total members', value: `${interaction.guild.memberCount}`, inline: true },
-				{ name: 'Server Created', value: `${interaction.guild.createdAt.toDateString()}`},
+				{ name: 'Server created', value: `${interaction.guild.createdAt.toDateString()}`},
 			)
 			.setFooter({ text: `Guild ID: ${interaction.guild.id}` });
 

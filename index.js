@@ -1,5 +1,5 @@
 // Require the necessary discord.js classes and dotenv (for token)
-const { Client, Collection, Events, GatewayIntentBits } = require('discord.js');
+const { Client, Collection, Events, GatewayIntentBits, ActivityType } = require('discord.js');
 const { token } = require('./config.json');
 const fs = require('node:fs'); 
 const path = require('node:path');
@@ -17,6 +17,7 @@ const client = new Client({
 // create a collection for commands, easy to store and retrieve for execution!
 client.commands = new Collection();
 
+// add all the commands to client.commands
 const foldersPath = path.join(__dirname, 'commands');
 const commandFolders = fs.readdirSync(foldersPath);
 
@@ -38,6 +39,13 @@ for (const folder of commandFolders) {
 // If bot is able to connect, print a confirmation message!
 client.once(Events.ClientReady, c => {
 	console.log(`Ready! Logged in as ${c.user.tag} :D`);
+});
+
+client.on(Events.ClientReady, c => {
+	client.user.setActivity({
+		name: "you <3",
+		type: ActivityType.Listening,
+	});
 });
 
 // execute (slash) commands!

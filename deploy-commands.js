@@ -31,9 +31,19 @@ const rest = new REST().setToken(token);
 		// The put method is used to fully refresh all commands in the guild with the current set
 		const data = await rest.put(
 			Routes.applicationGuildCommands(clientId, guildId),
-			// Routes.applicationCommands(clientId), // For global deployment!!
+			// Routes.applicationCommands(clientId), // FOR GLOBAL DEPLOYMENT!!
 			{ body: commands },
 		);
+
+		// DELETING ALL GUILD-BASED COMMANDS
+		// rest.put(Routes.applicationGuildCommands(clientId, guildId), { body: [] })
+		// 	.then(() => console.log('Successfully deleted all guild commands.'))
+		// 	.catch(console.error);
+
+		// DELETE A SPECIFIC GUILD-BASED COMMAND
+		// rest.delete(Routes.applicationGuildCommand(clientId, guildId, '1095942403954851920'))
+		// 	.then(() => console.log('Successfully deleted guild command'))
+		// 	.catch(console.error);
 
 		console.log(`Successfully reloaded ${data.length} application (/) commands.`);
 	} catch (error) {

@@ -3,11 +3,13 @@ const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 module.exports = {
 	data: new SlashCommandBuilder()
 		.setName('user')
-		.setDescription('Provides information about the mentioned user'),
+		.setDescription('Provides information about the mentioned user')
+		.addUserOption(option =>
+			option.setName('mention')
+				.setDescription('The user to get information about')),
 	async execute(interaction) {
-		const user = interaction.user;
-
-		const member = interaction.guild.members.cache.get(user.id);
+		const user = interaction.options.getUser('mention') ?? interaction.user;
+        const member = interaction.guild.members.cache.get(user.id);
         const nickname = member ? member.nickname : null;
 
         const embed = new EmbedBuilder()

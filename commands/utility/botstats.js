@@ -3,7 +3,7 @@ const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, Butt
 module.exports = {
 	data: new SlashCommandBuilder()
 		.setName('botstats')
-		.setDescription('Displays statistics relating to the bot.'),
+		.setDescription('Displays statistics relating to the bot'),
 	async execute(interaction) {
         const client = interaction.client;
         const icon = `${client.user.displayAvatarURL()}`;

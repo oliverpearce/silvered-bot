@@ -3,10 +3,10 @@ const { SlashCommandBuilder, EmbedBuilder, ApplicationCommandOptionType } = requ
 module.exports = {
 	data: new SlashCommandBuilder()
 		.setName('avatar')
-		.setDescription('Displays avatar of the mentioned user.')
+		.setDescription('Displays avatar of the mentioned user')
 		.addUserOption(option =>
 			option.setName('mention')
-				.setDescription('The user to show the avatar of.')),
+				.setDescription('The user to show the avatar of')),
 	async execute(interaction) {
         const user = interaction.options.getUser('mention') ?? interaction.user;
         const member = interaction.guild.members.cache.get(user.id);

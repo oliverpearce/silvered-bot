@@ -3,7 +3,7 @@ const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 module.exports = {
 	data: new SlashCommandBuilder()
 		.setName('server')
-		.setDescription('Provides information about the server.'),
+		.setDescription('Provides information about the server'),
 	async execute(interaction) {
 		const numBots = interaction.guild.members.cache.filter(member => member.user.bot).size;
 

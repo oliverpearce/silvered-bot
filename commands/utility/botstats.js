@@ -37,7 +37,7 @@ module.exports = {
             .addFields(
                 { name: 'Servers', value: `${client.guilds.cache.size}` , inline: true},
                 { name: 'Users', value: `${serverCount}`, inline: true },
-                { name: 'Creator', value: `Silver#6288`, inline: true },
+                { name: 'Creator', value: `silv3red`, inline: true },
                 { name: 'Uptime', value: `\`\`\`${uptime}\`\`\``},
             );
             

@@ -7,11 +7,11 @@ module.exports = {
 	async execute(interaction) {
         const embed = new EmbedBuilder()
             .setColor('LuminousVividPink')
-            .setTitle(`**< __Help Center__ >**`)
+            .setTitle(`:house:   **< __Help Center__ >**`)
             .addFields(
-                { name: ':gear: Main Page', value: 'main menu for browsing commands!' },
-                { name: ':tools: Utility Page', value: 'all the basic utility commands!' },
-                { name: ':tada: Fun Page', value: `infinite fun! infinite fun commands!` },
+                { name: ':gear:  Main Page', value: 'main menu for browsing commands!\n' },
+                { name: ':tools:  Utility Page', value: 'all the basic utility commands!\n' },
+                { name: ':tada:  Fun Page', value: `infinite fun! infinite fun commands!\n` },
             )
             .setFooter({ text: 'Main'})
             .setTimestamp()

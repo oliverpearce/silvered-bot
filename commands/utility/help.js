@@ -25,6 +25,7 @@ module.exports = {
                 { name: '/help', value: `the classic help command`},
                 { name: '/ping', value: `checks the ping of bot`},
                 { name: '/server', value: `provides information about the server`},
+                { name: '/url-lookup', value: `extract info from a url`},
                 { name: '/user *[mention]*', value: `provides information about the mentioned user`},
             )
             .setFooter({ text: 'Utility' })
@@ -35,6 +36,7 @@ module.exports = {
             .setTitle(`:tada:   **< __Fun Center__ >**`)
             .addFields(
                 { name: '/pokeguess *[generation]*', value: `start a pokemon guessing game!`},
+                { name: '/echo *[input]*', value: `replies with your input!`},
             )
             .setFooter({ text: 'Fun' })
             .setTimestamp()

@@ -4,7 +4,7 @@ module.exports = {
 	data: new SlashCommandBuilder()
 		.setName('echo')
 		.setDescription('Replies with your input!')
-        .addUserOption(option =>
+        .addStringOption(option =>
 			option.setName('input')
 				.setDescription('what will silvered say?')
                 .setRequired(true)),

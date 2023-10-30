@@ -5,7 +5,7 @@ module.exports = {
 		.setName('server')
 		.setDescription('Provides information about the server'),
 	async execute(interaction) {
-		const numBots = interaction.guild.members.cache.filter(member => member.user.bot).size;
+		const numBots = interaction.guild.members.cache.filter((member) => member.user.bot).size;
 
         const embed = new EmbedBuilder()
             .setTitle(`:gear:   < ${interaction.guild.name} >`)

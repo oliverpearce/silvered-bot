@@ -1,7 +1,9 @@
 // using rapidApi (https://rapidapi.com/hub)
 
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
-const axios = require('axios')
+const axios = require('axios');
+require('dotenv').config();
+RAPID = process.env.RAPID_TOKEN;
 
 module.exports = {
     data: new SlashCommandBuilder() 
@@ -23,7 +25,7 @@ module.exports = {
                 url: url
             },
             headers: {
-                'X-RapidAPI-Key': '97b6f41242msh32114abcc5fa146p1a1ab8jsne1609ecf776a',
+                'X-RapidAPI-Key': RAPID,
                 'X-RapidAPI-Host': 'url-lookup-by-api-ninjas.p.rapidapi.com'
             },
         };

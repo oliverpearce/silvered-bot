@@ -16,7 +16,7 @@ module.exports = {
 			.setColor('LuminousVividPink')
 			.setThumbnail(`${user.displayAvatarURL()}`)
 			.addFields(
-				{ name: 'Full name', value: `${user.username}#${user.discriminator}` , inline: true},
+				{ name: 'Full name', value: `${user.username}` , inline: true},
 				{ name: 'Nickname', value: nickname || 'None', inline: true },
 				{ name: 'Account created', value: `${user.createdAt.toDateString()}` , inline: true},
 				{ name: 'Joined server', value: `${member.joinedAt.toDateString()}` , inline: true},

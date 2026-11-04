@@ -9,7 +9,7 @@ module.exports = {
 				.setDescription('The user to get information about')),
 	async execute(interaction) {
 		const user = interaction.options.getUser('mention') ?? interaction.user;
-        const member = interaction.guild.members.cache.get(user.id);
+        const member = interaction.options.getMember('mention') ?? (user.id === interaction.user.id ? interaction.member : null);
         const nickname = member ? member.nickname : null;
 
         const embed = new EmbedBuilder()
@@ -19,10 +19,10 @@ module.exports = {
 				{ name: 'Full name', value: `${user.username}` , inline: true},
 				{ name: 'Nickname', value: nickname || 'None', inline: true },
 				{ name: 'Account created', value: `${user.createdAt.toDateString()}` , inline: true},
-				{ name: 'Joined server', value: `${member.joinedAt.toDateString()}` , inline: true},
+				{ name: 'Joined server', value: member ? `${member.joinedAt.toDateString()}` : 'Not in this server' , inline: true},
 			)
 			.setFooter({ text: `User ID: ${user.id}` });
 
 		await interaction.reply({ embeds: [embed] });
 	},
-};
+};

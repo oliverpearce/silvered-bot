@@ -12,7 +12,7 @@ module.exports = {
         .addStringOption(option => option.setName('url').setDescription('url you want to look up').setRequired(true)),
     async execute (interaction) {
 
-        await interaction.deferReply({ ephemeral: false });
+        await interaction.deferReply();
 
         // get url and options
         const {options} = interaction;
@@ -46,4 +46,4 @@ module.exports = {
 
     }
 
-}
+}

@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="referrer" content="no-referrer">
+	<title>Silvered Dashboard</title>
+	<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+	<div id="app">
+		<aside class="sidebar">
+			<div class="brand">
+				<img id="bot-avatar" alt="" hidden>
+				<div>
+					<div class="brand-name">Silvered</div>
+					<div class="brand-sub" id="bot-tag">dashboard</div>
+				</div>
+			</div>
+			<label class="guild-picker">
+				<span class="label">Server</span>
+				<select id="guild-select"></select>
+			</label>
+			<nav id="nav">
+				<button data-view="send" class="active"><span class="ico">✉</span>Send message</button>
+				<button data-view="menus"><span class="ico">☰</span>Role menus</button>
+				<button data-view="roles"><span class="ico">◆</span>Roles</button>
+				<button data-view="members"><span class="ico">☺</span>Members</button>
+				<button data-view="settings"><span class="ico">⚙</span>Settings</button>
+			</nav>
+			<div class="sidebar-foot">
+				<button id="refresh" class="ghost small" title="Reload channels, roles and emoji from Discord">↻ Refresh</button>
+				<button id="logout" class="ghost small" title="Forget the access key in this browser">Lock</button>
+			</div>
+		</aside>
+		<main id="view" aria-live="polite"></main>
+	</div>
+
+	<div id="login" class="overlay" hidden>
+		<form class="card login-card" id="login-form">
+			<h1>Silvered Dashboard</h1>
+			<p>Paste the access key from the bot's console. It's printed on startup as<br><code>Dashboard: http://localhost:3001/#key=…</code><br>You can also just click that link.</p>
+			<input id="login-key" type="password" placeholder="Access key" autocomplete="off" required>
+			<button type="submit" class="primary">Unlock</button>
+			<p class="error" id="login-error"></p>
+		</form>
+	</div>
+
+	<div id="toasts"></div>
+	<script src="/app.js"></script>
+</body>
+</html>

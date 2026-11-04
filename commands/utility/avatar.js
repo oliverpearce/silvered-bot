@@ -9,14 +9,14 @@ module.exports = {
 				.setDescription('The user to show the avatar of')),
 	async execute(interaction) {
         const user = interaction.options.getUser('mention') ?? interaction.user;
-        const member = interaction.guild.members.cache.get(user.id);
+        const member = interaction.options.getMember('mention') ?? (user.id === interaction.user.id ? interaction.member : null);
         
         const embed = new EmbedBuilder()
-            .setTitle(`${member.displayName}'s avatar!`)
+            .setTitle(`${member?.displayName ?? user.username}'s avatar!`)
             .setColor('LuminousVividPink')
             .setImage(`${user.displayAvatarURL({size: 1024, format: 'png', dynamic: true})}`)
             .setFooter({ text: `Requested by ${interaction.user.username}`, iconURL: `${interaction.user.displayAvatarURL()}`});
 
 		await interaction.reply({ embeds: [embed] });
 	},
-};
+};

@@ -1,25 +1,33 @@
-// Local web dashboard for managing your server: send embeds, build role menus, manage roles/members.
+// Web dashboard for managing your server: send/edit embeds, build role menus, manage roles/members.
 //
-// Security: it only listens on 127.0.0.1 (your own computer) and every API call needs the access key
-// that's printed in the console on startup (or DASHBOARD_KEY from .env). The key is sent in a custom
-// header, which also stops other websites from making requests to it from your browser.
+// Two ways to run it (DASHBOARD in .env):
+//   local  (default) its own server on 127.0.0.1:DASHBOARD_PORT, only reachable from this computer.
+//   public shares the bot's main port (Wispbyte's SERVER_PORT) at /dashboard/, reachable from anywhere.
+//
+// Security: every API call needs the access key (DASHBOARD_KEY). The key is sent in a custom header,
+// which also stops other websites from making requests to it from your browser. Too many wrong keys
+// from one IP get that IP locked out for a while.
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
-const { ChannelType, EmbedBuilder, PermissionFlagsBits, PermissionsBitField } = require('discord.js');
+const { ChannelType, PermissionFlagsBits, PermissionsBitField } = require('discord.js');
 const { botCantManage } = require('../roleUtils');
 const { buildRows, makeButton } = require('../commands/roles/rolemenu');
 const roleMenus = require('../roleMenus');
 const storage = require('../storage');
+const { EmbedError, str, parseColor, hex, buildEmbed, embedToDraft } = require('../embeds');
 
 const PUBLIC_DIR = path.join(__dirname, 'public');
+// Paths are relative to /dashboard (public mode) or / (local mode).
 const STATIC = {
 	'/': ['index.html', 'text/html; charset=utf-8'],
 	'/app.js': ['app.js', 'text/javascript; charset=utf-8'],
 	'/style.css': ['style.css', 'text/css; charset=utf-8'],
 };
 const MAX_BODY = 1024 * 1024;
+const LOCKOUT_FAILS = 10;
+const LOCKOUT_MS = 15 * 60 * 1000;
 
 // Permissions the dashboard lets you toggle on roles, grouped like Discord's own role editor.
 const PERMISSION_GROUPS = [
@@ -46,6 +54,7 @@ function send(res, status, body, type = 'application/json; charset=utf-8') {
 		'X-Content-Type-Options': 'nosniff',
 		'X-Frame-Options': 'DENY',
 		'Referrer-Policy': 'no-referrer',
+		'Content-Security-Policy': "default-src 'self'; img-src * data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
 	});
 	res.end(type.startsWith('application/json') ? JSON.stringify(body) : body);
 }
@@ -81,15 +90,27 @@ function keyMatches(given, key) {
 }
 
 const isSnowflake = s => typeof s === 'string' && /^\d{17,20}$/.test(s);
-const str = (v, max) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
 
-function parseColor(v) {
-	if (typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 0xFFFFFF) return v;
-	if (typeof v === 'string' && /^#?[0-9a-f]{6}$/i.test(v.trim())) return parseInt(v.trim().replace('#', ''), 16);
-	return null;
+// Counts wrong keys per IP and locks an IP out after too many.
+function makeLockout() {
+	const fails = new Map();
+	const entry = ip => {
+		const now = Date.now();
+		let e = fails.get(ip);
+		if (!e || now > e.reset) {
+			e = { count: 0, reset: now + LOCKOUT_MS };
+			fails.set(ip, e);
+		}
+		return e;
+	};
+	return {
+		blocked: ip => { const e = fails.get(ip); return Boolean(e && Date.now() <= e.reset && e.count >= LOCKOUT_FAILS); },
+		fail: ip => {
+			entry(ip).count++;
+			if (fails.size > 5000) for (const [k, v] of fails) if (Date.now() > v.reset) fails.delete(k);
+		},
+	};
 }
-
-const hex = n => `#${(n ?? 0).toString(16).padStart(6, '0')}`;
 
 function serializeRole(guild, role) {
 	return {
@@ -119,44 +140,6 @@ function serializeMember(m) {
 	};
 }
 
-// Builds and validates the embed from the dashboard's form. Returns null if the embed is empty.
-const URL_FIELDS = [
-	['Title link', e => e.url], ['Author icon', e => e.author?.iconURL], ['Author link', e => e.author?.url],
-	['Thumbnail', e => e.thumbnail], ['Image', e => e.image], ['Footer icon', e => e.footer?.iconURL],
-];
-
-function buildEmbed(e) {
-	if (!e || typeof e !== 'object') return null;
-	for (const [label, pick] of URL_FIELDS) {
-		const v = str(pick(e), 2000);
-		if (v && !/^https?:\/\/[^\s]+$/i.test(v)) throw new HttpError(400, `${label} isn't a valid link. It has to start with https:// (for images, right-click the image → Copy Image Link).`);
-	}
-	const embed = new EmbedBuilder();
-	let used = false;
-	const set = (value, fn) => { if (value) { fn(value); used = true; } };
-
-	set(str(e.title, 256), v => embed.setTitle(v));
-	set(str(e.url, 2000), v => embed.setURL(v));
-	set(str(e.description, 4096), v => embed.setDescription(v));
-	const color = parseColor(e.color);
-	if (color !== null) embed.setColor(color);
-	set(str(e.author?.name, 256), v => embed.setAuthor({ name: v, iconURL: str(e.author?.iconURL, 2000) || undefined, url: str(e.author?.url, 2000) || undefined }));
-	set(str(e.thumbnail, 2000), v => embed.setThumbnail(v));
-	set(str(e.image, 2000), v => embed.setImage(v));
-	set(str(e.footer?.text, 2048), v => embed.setFooter({ text: v, iconURL: str(e.footer?.iconURL, 2000) || undefined }));
-	if (e.timestamp) embed.setTimestamp();
-	const fields = (Array.isArray(e.fields) ? e.fields : [])
-		.map(f => ({ name: str(f?.name, 256), value: str(f?.value, 1024), inline: Boolean(f?.inline) }))
-		.filter(f => f.name || f.value)
-		.slice(0, 25)
-		.map(f => ({ name: f.name || '​', value: f.value || '​', inline: f.inline }));
-	if (fields.length) { embed.addFields(fields); used = true; }
-
-	if (!used) return null;
-	if (embed.length > 6000) throw new HttpError(400, 'The embed is over Discord\'s 6000 character limit.');
-	return embed;
-}
-
 function textChannel(guild, channelId) {
 	const channel = guild.channels.cache.get(channelId);
 	if (!channel || !channel.isTextBased() || channel.isVoiceBased()) throw new HttpError(400, 'Pick a text channel.');
@@ -180,6 +163,96 @@ function manageableRole(guild, roleId) {
 	const problem = role.id === guild.id ? "That's the @everyone role." : botCantManage(guild, role);
 	if (problem) throw new HttpError(400, plain(guild, problem));
 	return role;
+}
+
+// Reads the message text + embed from the dashboard form.
+function readContent(body) {
+	const content = str(body.content, 2000);
+	let embed;
+	try { embed = buildEmbed(body.embed); } catch (e) { throw new HttpError(400, e instanceof EmbedError ? e.message : `Embed problem: ${e.message}`); }
+	if (!content && !embed) throw new HttpError(400, 'Write some message text or fill in the embed.');
+	return { content, embed };
+}
+
+// Checks a role menu from the dashboard form. Returns null when there's no menu.
+function readMenu(guild, channel, raw) {
+	if (!raw || !Array.isArray(raw.items) || !raw.items.length) return null;
+	if (!['reactions', 'buttons'].includes(raw.mode)) throw new HttpError(400, 'Unknown menu type.');
+	const limit = raw.mode === 'reactions' ? 20 : 25;
+	if (raw.items.length > limit) throw new HttpError(400, `A ${raw.mode} menu can have at most ${limit} roles.`);
+	const items = [];
+	for (const it of raw.items) {
+		const role = manageableRole(guild, it.roleId);
+		if (items.some(x => x.roleId === role.id)) throw new HttpError(400, `${role.name} is on the menu twice.`);
+		const emoji = str(it.emoji, 100);
+		if (raw.mode === 'reactions' && !emoji) throw new HttpError(400, `Pick an emoji for ${role.name}.`);
+		items.push({ roleId: role.id, role, emoji, label: str(it.label, 80) || role.name.slice(0, 80) });
+	}
+	if (raw.mode === 'reactions') {
+		const perms = channel.permissionsFor(guild.members.me);
+		if (!perms?.has([PermissionFlagsBits.AddReactions, PermissionFlagsBits.ReadMessageHistory])) {
+			throw new HttpError(400, `I need Add Reactions and Read Message History in #${channel.name}.`);
+		}
+	}
+	return { mode: raw.mode, unique: Boolean(raw.unique), category: str(raw.category, 50), items };
+}
+
+function buttonRows(menu) {
+	try {
+		return buildRows(menu.items.map(i => makeButton(i.role, menu.unique, i.emoji || undefined, i.label)));
+	} catch (e) {
+		throw new HttpError(400, `Button problem (usually a bad emoji): ${e.message}`);
+	}
+}
+
+// Adds the reactions for a menu and saves it. `previous` is the old version when editing.
+// Returns a warning string if some emoji didn't work.
+async function attachMenu(guild, message, menu, previous) {
+	const saved = [];
+	const failed = [];
+	for (const i of menu.items) {
+		let key = null;
+		if (menu.mode === 'reactions') {
+			try {
+				const reaction = await message.react(i.emoji);
+				key = roleMenus.emojiKey(reaction.emoji);
+			} catch (e) {
+				failed.push(`${i.emoji} (${i.role.name}): ${e.message}`);
+				continue;
+			}
+			const clash = saved.find(x => x.key === key);
+			if (clash) {
+				failed.push(`${i.emoji} (${i.role.name}): that emoji is already used for ${guild.roles.cache.get(clash.roleId)?.name ?? 'another role'}`);
+				continue;
+			}
+		}
+		saved.push({ roleId: i.roleId, emoji: i.emoji, key, label: i.label });
+	}
+
+	// Take the bot's own reactions off emoji that aren't on the menu any more.
+	if (previous?.mode === 'reactions') {
+		const keep = new Set(saved.map(x => x.key).filter(Boolean));
+		for (const old of previous.items) {
+			if (old.key && !keep.has(old.key)) await roleMenus.removeBotReaction(message, old.key);
+		}
+	}
+
+	if (saved.length) {
+		roleMenus.save(guild.id, message.id, {
+			channelId: message.channelId,
+			mode: menu.mode,
+			unique: menu.unique,
+			category: menu.category || undefined,
+			title: roleMenus.titleOf(message),
+			items: saved,
+			autoList: previous?.autoList || undefined,
+			createdAt: previous?.createdAt ?? new Date().toISOString(),
+			updatedAt: previous ? new Date().toISOString() : undefined,
+		});
+	} else if (previous) {
+		roleMenus.remove(guild.id, message.id);
+	}
+	return failed.length ? `These emoji didn't work, so they're not on the menu: ${failed.join('; ')}` : null;
 }
 
 // Turns a list of permission names into a bitfield, dropping ones the bot doesn't have
@@ -241,6 +314,7 @@ async function api(client, req, res, url) {
 			emojis: guild.emojis.cache.map(e => ({ id: e.id, name: e.name, animated: e.animated, url: e.imageURL({ size: 48 }), text: e.toString() })),
 			me: { highestRole: me.roles.highest.name, permissions: me.permissions.toArray(), manageRoles: me.permissions.has(PermissionFlagsBits.ManageRoles) },
 			autorole: storage.get(guild.id, 'autorole') ?? null,
+			menuCategories: roleMenus.categories(guild.id),
 		};
 	}
 
@@ -248,41 +322,11 @@ async function api(client, req, res, url) {
 	if (section === 'messages' && !id && method === 'POST') {
 		const body = await readJson(req);
 		const channel = textChannel(guild, body.channelId);
-		const content = str(body.content, 2000);
-		let embed;
-		try { embed = buildEmbed(body.embed); } catch (e) { throw e instanceof HttpError ? e : new HttpError(400, `Embed problem: ${e.message}`); }
-		if (!content && !embed) throw new HttpError(400, 'Write some message text or fill in the embed.');
+		const { content, embed } = readContent(body);
+		const menu = readMenu(guild, channel, body.menu);
 
-		const menu = body.menu && Array.isArray(body.menu.items) && body.menu.items.length ? body.menu : null;
-		const items = [];
-		if (menu) {
-			if (!['reactions', 'buttons'].includes(menu.mode)) throw new HttpError(400, 'Unknown menu type.');
-			const limit = menu.mode === 'reactions' ? 20 : 25;
-			if (menu.items.length > limit) throw new HttpError(400, `A ${menu.mode} menu can have at most ${limit} roles.`);
-			for (const it of menu.items) {
-				const role = manageableRole(guild, it.roleId);
-				if (items.some(x => x.roleId === role.id)) throw new HttpError(400, `${role.name} is on the menu twice.`);
-				const emoji = str(it.emoji, 100);
-				if (menu.mode === 'reactions' && !emoji) throw new HttpError(400, `Pick an emoji for ${role.name}.`);
-				items.push({ roleId: role.id, role, emoji, label: str(it.label, 80) || role.name.slice(0, 80) });
-			}
-			if (menu.mode === 'reactions') {
-				const perms = channel.permissionsFor(me);
-				if (!perms?.has([PermissionFlagsBits.AddReactions, PermissionFlagsBits.ReadMessageHistory])) {
-					throw new HttpError(400, `I need Add Reactions and Read Message History in #${channel.name}.`);
-				}
-			}
-		}
-
-		const payload = { content: content || undefined, embeds: embed ? [embed] : [], allowedMentions: { parse: [] } };
-		if (body.allowMentions) payload.allowedMentions = { parse: ['users', 'roles'] };
-		if (menu?.mode === 'buttons') {
-			try {
-				payload.components = buildRows(items.map(i => makeButton(i.role, Boolean(menu.unique), i.emoji || undefined, i.label)));
-			} catch (e) {
-				throw new HttpError(400, `Button problem (usually a bad emoji): ${e.message}`);
-			}
-		}
+		const payload = { content: content || undefined, embeds: embed ? [embed] : [], allowedMentions: { parse: body.allowMentions ? ['users', 'roles'] : [] } };
+		if (menu?.mode === 'buttons') payload.components = buttonRows(menu);
 
 		let message;
 		try {
@@ -290,38 +334,70 @@ async function api(client, req, res, url) {
 		} catch (e) {
 			throw new HttpError(400, `Discord refused the message: ${e.message}`);
 		}
+		const warning = menu ? await attachMenu(guild, message, menu, null) : null;
+		return { ok: true, messageId: message.id, url: message.url, warning: warning ?? undefined };
+	}
+
+	// GET /api/guilds/:gid/messages/:mid?channelId=: load a message (and its role menu) into the editor
+	if (section === 'messages' && isSnowflake(id) && !sub && method === 'GET') {
+		const saved = roleMenus.get(guild.id, id);
+		const channelId = url.searchParams.get('channelId');
+		const cid = isSnowflake(channelId) ? channelId : saved?.channelId;
+		const channel = cid ? await client.channels.fetch(cid).catch(() => null) : null;
+		if (!channel?.isTextBased() || channel.guildId !== guild.id) throw new HttpError(404, "Couldn't find that message's channel.");
+		const message = await channel.messages.fetch(id).catch(() => null);
+		if (!message) throw new HttpError(404, "Couldn't find that message. It may have been deleted, or I can't read that channel.");
+		return {
+			channelId: channel.id,
+			messageId: message.id,
+			url: message.url,
+			own: message.author.id === client.user.id,
+			content: message.content,
+			embed: message.embeds[0] ? embedToDraft(message.embeds[0]) : null,
+			menu: saved ? {
+				mode: saved.mode,
+				unique: Boolean(saved.unique),
+				category: saved.category ?? '',
+				items: saved.items.map(i => ({ roleId: i.roleId, emoji: i.emoji ?? '', label: i.label ?? '' })),
+			} : null,
+		};
+	}
+
+	// PATCH /api/guilds/:gid/messages/:mid: edit a message the bot sent and/or its role menu
+	if (section === 'messages' && isSnowflake(id) && !sub && method === 'PATCH') {
+		const body = await readJson(req);
+		const channel = textChannel(guild, body.channelId);
+		const message = await channel.messages.fetch(id).catch(() => null);
+		if (!message) throw new HttpError(404, `Couldn't find that message in #${channel.name}. It may have been deleted.`);
+		const previous = roleMenus.get(guild.id, id);
+		const menu = readMenu(guild, channel, body.menu);
+		const notes = [];
+
+		if (message.author.id === client.user.id) {
+			const { content, embed } = readContent(body);
+			try {
+				await message.edit({
+					content,
+					embeds: embed ? [embed] : [],
+					components: menu?.mode === 'buttons' ? buttonRows(menu) : [],
+					allowedMentions: { parse: body.allowMentions ? ['users', 'roles'] : [] },
+				});
+			} catch (e) {
+				throw e instanceof HttpError ? e : new HttpError(400, `Discord refused the edit: ${e.message}`);
+			}
+		} else {
+			if (menu?.mode === 'buttons') throw new HttpError(400, 'Buttons can only go on messages the bot sent. Use reactions for this one.');
+			notes.push("That message wasn't sent by the bot, so only its reaction roles were changed.");
+		}
 
 		if (menu) {
-			const saved = [];
-			const failed = [];
-			for (const i of items) {
-				let key = null;
-				if (menu.mode === 'reactions') {
-					try {
-						const reaction = await message.react(i.emoji);
-						key = roleMenus.emojiKey(reaction.emoji);
-					} catch (e) {
-						failed.push(`${i.emoji} (${i.role.name}): ${e.message}`);
-						continue;
-					}
-				}
-				saved.push({ roleId: i.roleId, emoji: i.emoji, key, label: i.label });
-			}
-			if (saved.length) {
-				roleMenus.save(guild.id, message.id, {
-					channelId: channel.id,
-					mode: menu.mode,
-					unique: Boolean(menu.unique),
-					title: embed?.data.title || embed?.data.author?.name || content.slice(0, 80) || 'Role menu',
-					items: saved,
-					createdAt: new Date().toISOString(),
-				});
-			}
-			if (failed.length) {
-				return { ok: true, messageId: message.id, url: message.url, warning: `These emoji didn't work, so they're not on the menu: ${failed.join('; ')}` };
-			}
+			const warning = await attachMenu(guild, message, menu, previous);
+			if (warning) notes.push(warning);
+		} else if (previous) {
+			if (previous.mode === 'reactions') for (const old of previous.items) if (old.key) await roleMenus.removeBotReaction(message, old.key);
+			roleMenus.remove(guild.id, id);
 		}
-		return { ok: true, messageId: message.id, url: message.url };
+		return { ok: true, messageId: message.id, url: message.url, warning: notes.join(' ') || undefined };
 	}
 
 	// Role menus list/delete
@@ -338,10 +414,13 @@ async function api(client, req, res, url) {
 			const menu = roleMenus.get(guild.id, id);
 			if (!menu) throw new HttpError(404, 'That menu is already gone.');
 			let note = '';
-			if (url.searchParams.get('deleteMessage') === '1') {
-				const channel = guild.channels.cache.get(menu.channelId);
-				const msg = channel?.isTextBased() ? await channel.messages.fetch(id).catch(() => null) : null;
-				if (msg) await msg.delete().catch(e => { note = ` (couldn't delete the message: ${e.message})`; });
+			const channel = guild.channels.cache.get(menu.channelId);
+			const msg = channel?.isTextBased() ? await channel.messages.fetch(id).catch(() => null) : null;
+			if (msg && url.searchParams.get('deleteMessage') === '1') {
+				await msg.delete().catch(e => { note = ` (couldn't delete the message: ${e.message})`; });
+			} else if (msg && menu.mode === 'reactions') {
+				// Keeping the message: take the bot's reactions off so it doesn't look like a live menu.
+				for (const i of menu.items) if (i.key) await roleMenus.removeBotReaction(msg, i.key);
 			}
 			roleMenus.remove(guild.id, id);
 			return { ok: true, note };
@@ -436,33 +515,67 @@ async function api(client, req, res, url) {
 
 // ---------- server ----------
 
-function startDashboard(client, { port, key, defaultGuild }) {
+/**
+ * Returns an async (req, res) => handled handler.
+ * In public mode it only claims /dashboard* and /api/* and returns false for anything else,
+ * so the bot's status page can share the same port.
+ */
+function createDashboardHandler(client, { key, defaultGuild, publicMode = false, allowedHosts = null }) {
 	client.dashboardDefaultGuild = defaultGuild;
-	const allowedHosts = new Set([`localhost:${port}`, `127.0.0.1:${port}`]);
+	const lockout = makeLockout();
 
-	const server = http.createServer(async (req, res) => {
+	return async function handle(req, res) {
+		// Parse against a fixed base so a weird Host header can't break things.
+		const url = new URL(req.url, 'http://dashboard.local');
+		const p = url.pathname;
+		const isApi = p.startsWith('/api/');
+		const isDash = p === '/dashboard' || p.startsWith('/dashboard/');
+		if (publicMode && !isApi && !isDash) return false;
+		const done = (...args) => { send(res, ...args); return true; };
+
 		try {
-			// Blocks "DNS rebinding" tricks where another website pretends to be localhost.
-			if (!allowedHosts.has(req.headers.host)) return send(res, 403, 'Forbidden', 'text/plain');
-			const url = new URL(req.url, `http://${req.headers.host}`);
+			// Local mode: blocks "DNS rebinding" tricks where another website pretends to be localhost.
+			if (allowedHosts && !allowedHosts.has(req.headers.host)) return done(403, 'Forbidden', 'text/plain');
 
-			if (!url.pathname.startsWith('/api/')) {
-				const file = STATIC[url.pathname];
-				if (!file || req.method !== 'GET') return send(res, 404, 'Not found', 'text/plain');
-				return send(res, 200, fs.readFileSync(path.join(PUBLIC_DIR, file[0])), file[1]);
+			if (!isApi) {
+				if (p === '/dashboard') {
+					res.writeHead(301, { Location: `/dashboard/${url.search}` });
+					res.end();
+					return true;
+				}
+				const file = STATIC[isDash ? p.slice('/dashboard'.length) : p];
+				if (!file || req.method !== 'GET') return done(404, 'Not found', 'text/plain');
+				return done(200, fs.readFileSync(path.join(PUBLIC_DIR, file[0])), file[1]);
 			}
 
-			if (!keyMatches(req.headers['x-dashboard-key'], key)) return send(res, 401, { error: 'Wrong or missing access key.' });
-			if (!client.isReady()) return send(res, 503, { error: 'The bot is still connecting to Discord, try again in a few seconds.' });
+			const ip = req.socket.remoteAddress ?? 'unknown';
+			if (lockout.blocked(ip)) return done(429, { error: 'Too many wrong keys. Wait 15 minutes and try again.' });
+			if (!keyMatches(req.headers['x-dashboard-key'], key)) {
+				lockout.fail(ip);
+				return done(401, { error: 'Wrong or missing access key.' });
+			}
+			if (!client.isReady()) return done(503, { error: 'The bot is still connecting to Discord, try again in a few seconds.' });
 			const result = await api(client, req, res, url);
-			return send(res, 200, result);
+			send(res, 200, result);
 		} catch (e) {
-			if (e instanceof HttpError) return send(res, e.status, { error: e.message });
-			console.error('[dashboard]', e);
-			return send(res, 500, { error: e.message || 'Something went wrong.' });
+			if (e instanceof HttpError) send(res, e.status, { error: e.message });
+			else {
+				console.error('[dashboard]', e);
+				send(res, 500, { error: e.message || 'Something went wrong.' });
+			}
 		}
-	});
+		return true;
+	};
+}
 
+// Local mode: a separate server that only listens on this computer.
+function startDashboard(client, { port, key, defaultGuild }) {
+	const handle = createDashboardHandler(client, {
+		key,
+		defaultGuild,
+		allowedHosts: new Set([`localhost:${port}`, `127.0.0.1:${port}`]),
+	});
+	const server = http.createServer(handle);
 	server.on('error', e => console.error(`[dashboard] couldn't start on port ${port}: ${e.message}`));
 	server.listen(port, '127.0.0.1', () => {
 		console.log(`Dashboard: http://localhost:${port}/#key=${key}`);
@@ -470,4 +583,4 @@ function startDashboard(client, { port, key, defaultGuild }) {
 	return server;
 }
 
-module.exports = { startDashboard };
+module.exports = { createDashboardHandler, startDashboard };

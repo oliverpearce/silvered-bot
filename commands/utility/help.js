@@ -48,6 +48,9 @@ module.exports = {
             .addFields(
                 { name: '/rolemenu create', value: `post a button menu people click to get roles (games, pings...)`},
                 { name: '/rolemenu add | remove', value: `add/remove a role on an existing menu`},
+                { name: '/reactionrole create | add | remove', value: `reaction role menus: react with an emoji to get a role`},
+                { name: '/reactionrole edit | list | delete', value: `set a menu's category (games, events...) or pick-one, list or delete menus`},
+                { name: '/embed send | edit', value: `post or edit a custom embed with a pop-up form`},
                 { name: '/setup-roles', value: `create Mod > Semi-Mod > Perms > Non-User roles (admins)`},
                 { name: '/role add | remove | info', value: `give or take a role from someone`},
                 { name: '/autorole set | off | show', value: `give new members a role automatically`},

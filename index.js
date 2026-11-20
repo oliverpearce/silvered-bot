@@ -2,6 +2,7 @@
 const { Client, Collection, Events, GatewayIntentBits, ActivityType, REST, Routes, MessageFlags, Partials } = require('discord.js');
 const { token, clientId, guildId, port, dashboard } = require('./config');
 const roleMenus = require('./roleMenus');
+const { createDashboardHandler, startDashboard } = require('./dashboard/server');
 const fs = require('node:fs');
 const path = require('node:path');
 const http = require('node:http');
@@ -21,8 +22,9 @@ const client = new Client({
 		GatewayIntentBits.MessageContent,
 		GatewayIntentBits.GuildMessageReactions,
 	],
-	// Partials let the bot see reactions on messages sent before it last restarted.
-	partials: [Partials.Message, Partials.Channel, Partials.Reaction],
+	// Partials let the bot see reactions on messages sent before it last restarted,
+	// and from people it hasn't cached yet.
+	partials: [Partials.Message, Partials.Channel, Partials.Reaction, Partials.User, Partials.GuildMember],
 });
 
 // create a collection for commands, easy to store and retrieve for execution!
@@ -66,7 +68,7 @@ client.on(Events.GuildMemberAdd, member => {
 	client.commands.get('autorole')?.onJoin(member);
 });
 
-// Reaction roles (menus made in the dashboard)
+// Reaction roles (menus made in the dashboard or with /reactionrole)
 client.on(Events.MessageReactionAdd, (reaction, user) => {
 	roleMenus.onReactionAdd(reaction, user).catch(e => console.error('[reaction roles]', e.message));
 });
@@ -78,11 +80,17 @@ client.on(Events.MessageDelete, message => {
 	if (message.guildId) roleMenus.remove(message.guildId, message.id);
 });
 
-// Slash commands + role menu buttons
+// Slash commands, autocomplete, role menu buttons and /embed's pop-up forms
 client.on(Events.InteractionCreate, async interaction => {
 	try {
 		if (interaction.isButton() && /^rru?:/.test(interaction.customId)) {
 			return await client.commands.get('rolemenu').handleButton(interaction);
+		}
+		if (interaction.isModalSubmit() && interaction.customId.startsWith('embed:')) {
+			return await client.commands.get('embed').handleModal(interaction);
+		}
+		if (interaction.isAutocomplete()) {
+			return await client.commands.get(interaction.commandName)?.autocomplete?.(interaction);
 		}
 		if (!interaction.isChatInputCommand()) return;
 		const command = client.commands.get(interaction.commandName);
@@ -97,19 +105,31 @@ client.on(Events.InteractionCreate, async interaction => {
 	}
 });
 
-// Tiny web page so uptime monitors / cron jobs can ping the bot.
-http.createServer((req, res) => {
-	const ok = client.isReady();
-	res.writeHead(ok ? 200 : 503, { 'Content-Type': 'text/plain' });
-	res.end(ok ? `silvered-bot is online (${client.ws.ping}ms)` : 'starting up...');
-}).listen(port, () => console.log(`Keep-alive page listening on port ${port}`));
-
 process.on('unhandledRejection', e => console.error('Unhandled rejection:', e));
 
-// Local web dashboard (http://localhost:3001 by default). Only reachable from this computer.
-if (dashboard.enabled) {
-	require('./dashboard/server').startDashboard(client, { port: dashboard.port, key: dashboard.key, defaultGuild: guildId });
+// Web dashboard. See config.js for the DASHBOARD modes.
+let dashboardHandler = null;
+if (dashboard.mode === 'public') {
+	if (!dashboard.keyFromEnv || dashboard.key.length < 16) {
+		console.error('[dashboard] DASHBOARD=public needs DASHBOARD_KEY set to something long and random (16+ characters). The dashboard is OFF until you set it.');
+	} else {
+		dashboardHandler = createDashboardHandler(client, { key: dashboard.key, defaultGuild: guildId, publicMode: true });
+	}
+} else if (dashboard.mode === 'local') {
+	// Only reachable from this computer (http://localhost:3001 by default).
+	startDashboard(client, { port: dashboard.port, key: dashboard.key, defaultGuild: guildId });
 }
+
+// One web server on the host's port: the status page (for uptime pings) and, in public mode, the dashboard.
+http.createServer(async (req, res) => {
+	if (dashboardHandler && await dashboardHandler(req, res)) return;
+	const ok = client.isReady();
+	res.writeHead(ok ? 200 : 503, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });
+	res.end(ok ? `silvered-bot is online (${client.ws.ping}ms)` : 'starting up...');
+}).listen(port, () => {
+	console.log(`Status page listening on port ${port} (/health)`);
+	if (dashboardHandler) console.log(`Dashboard: http://<your-server-address>:${port}/dashboard/ (log in with DASHBOARD_KEY)`);
+});
 
 // Log in to Discord with your client's token
 client.login(token).catch(e => {

@@ -11,6 +11,13 @@ if (fs.existsSync(jsonPath)) {
 	try { fileConfig = require(jsonPath); } catch (e) { console.warn('[config] could not read config.json:', e.message); }
 }
 
+function dashboardMode(value) {
+	const v = (value ?? '').trim().toLowerCase();
+	if (/^(off|false|0|no)$/.test(v)) return 'off';
+	if (v === 'public') return 'public';
+	return 'local';
+}
+
 module.exports = {
 	token: process.env.DISCORD_TOKEN || fileConfig.token,
 	clientId: process.env.CLIENT_ID || fileConfig.clientId,
@@ -20,10 +27,13 @@ module.exports = {
 	// Port for the small "I'm alive" web page. Pterodactyl hosts (like Wispbyte) set SERVER_PORT.
 	port: process.env.PORT || process.env.SERVER_PORT || 3000,
 	dashboard: {
-		// Set DASHBOARD=off to turn the web dashboard off (e.g. on a host where you can't reach localhost anyway).
-		enabled: !/^(off|false|0|no)$/i.test(process.env.DASHBOARD ?? ''),
+		// DASHBOARD=local  (default) only reachable from this computer, on DASHBOARD_PORT.
+		// DASHBOARD=public shares the main port at /dashboard/ so you can reach it on Wispbyte. Needs DASHBOARD_KEY.
+		// DASHBOARD=off    no dashboard.
+		mode: dashboardMode(process.env.DASHBOARD),
 		port: Number(process.env.DASHBOARD_PORT) || 3001,
-		// Set DASHBOARD_KEY to keep the same key between restarts; otherwise a new one is made each start.
+		// Set DASHBOARD_KEY to keep the same key between restarts; otherwise a new one is made each start (local only).
 		key: process.env.DASHBOARD_KEY || crypto.randomBytes(18).toString('base64url'),
+		keyFromEnv: Boolean(process.env.DASHBOARD_KEY),
 	},
 };

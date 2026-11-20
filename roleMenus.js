@@ -1,4 +1,5 @@
-// Role menus made from the dashboard, saved in data/settings.json under "roleMenus".
+// Role menus made from the dashboard or /reactionrole, saved in data/settings.json under "roleMenus".
+// Each menu can have a category (e.g. "Games", "Events", "Interests") so they're easy to group.
 //
 //   reactions mode: people react with an emoji to get the role; removing the reaction removes it.
 //                   The bot needs this file to know which emoji = which role.
@@ -60,6 +61,26 @@ async function resolve(reaction, user) {
 	return { message, guild, menu, item, role, member };
 }
 
+// Suggested categories, plus whatever this server already uses.
+const DEFAULT_CATEGORIES = ['Games', 'Events', 'Interests', 'Pings', 'Pronouns', 'Colours'];
+
+function categories(guildId) {
+	const used = Object.values(all(guildId)).map(m => m.category).filter(Boolean);
+	return [...new Set([...DEFAULT_CATEGORIES, ...used])];
+}
+
+/** A short name for a menu, taken from its message. */
+function titleOf(message) {
+	const e = message.embeds[0];
+	return (e?.title || e?.author?.name || message.content || 'Role menu').slice(0, 80);
+}
+
+/** Takes the bot's own reaction for this emoji off a message. */
+async function removeBotReaction(message, key) {
+	const rx = message.reactions.cache.find(x => emojiKey(x.emoji) === key);
+	if (rx) await rx.users.remove(message.client.user.id).catch(() => {});
+}
+
 async function onReactionAdd(reaction, user) {
 	const r = await resolve(reaction, user);
 	if (!r) return;
@@ -99,4 +120,4 @@ async function onReactionRemove(reaction, user) {
 	if (r.member.roles.cache.has(r.role.id)) await r.member.roles.remove(r.role, 'Reaction role removed');
 }
 
-module.exports = { KEY, emojiKey, all, get, save, remove, onReactionAdd, onReactionRemove };
+module.exports = { KEY, DEFAULT_CATEGORIES, emojiKey, all, get, save, remove, categories, titleOf, removeBotReaction, onReactionAdd, onReactionRemove };

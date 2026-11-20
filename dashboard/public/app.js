@@ -79,7 +79,8 @@ async function api(path, { method = 'GET', body } = {}) {
 		body: body !== undefined ? JSON.stringify(body) : undefined,
 	});
 	const data = await res.json().catch(() => ({}));
-	if (res.status === 401) { showLogin('That key didn\'t work. Copy the newest one from the bot\'s console.'); throw new Error('Locked'); }
+	if (res.status === 401) { showLogin('That key didn\'t work. Use your DASHBOARD_KEY (or the newest key from the bot\'s console).'); throw new Error('Locked'); }
+	if (res.status === 429) { showLogin(data.error || 'Too many wrong keys. Wait a bit and try again.'); throw new Error('Locked'); }
 	if (!res.ok) throw new Error(data.error || `${res.status} ${res.statusText}`);
 	return data;
 }
@@ -282,12 +283,47 @@ const DEFAULT_DRAFT = () => ({
 	embedOn: true,
 	embed: { title: '', url: '', description: '', color: '#ff69b4', author: { name: '', iconURL: '' }, thumbnail: '', image: '', footer: { text: '', iconURL: '' }, timestamp: false, fields: [] },
 	menuOn: false,
-	menu: { mode: 'reactions', unique: false, items: [] },
+	menu: { mode: 'reactions', unique: false, category: '', items: [] },
 	allowMentions: false,
+	// Set when editing a message that's already posted: { messageId, channelId, url, own, hadMenu }
+	editing: null,
 });
 
 let draft = Object.assign(DEFAULT_DRAFT(), store.get('draft', {}));
+draft.menu.category ??= '';
 const saveDraft = debounce(() => store.set('draft', draft), 300);
+
+// Pulls a posted message (and its role menu, if it has one) into the editor.
+async function loadMessage(channelId, messageId) {
+	try {
+		const m = await api(`/guilds/${state.guildId}/messages/${messageId}${channelId ? `?channelId=${channelId}` : ''}`);
+		const fresh = DEFAULT_DRAFT();
+		draft = {
+			...fresh,
+			channelId: m.channelId,
+			content: m.content ?? '',
+			embedOn: Boolean(m.embed),
+			embed: m.embed ? { ...fresh.embed, ...m.embed } : fresh.embed,
+			menuOn: Boolean(m.menu),
+			menu: m.menu ?? fresh.menu,
+			editing: { messageId: m.messageId, channelId: m.channelId, url: m.url, own: m.own, hadMenu: Boolean(m.menu) },
+		};
+		store.set('draft', draft);
+		state.view = 'send';
+		store.set('view', state.view);
+		render();
+		toast(m.own ? 'Loaded. Change anything, then press Save changes.' : 'Loaded. The bot didn\'t send this message, so you can only change its reaction roles.', m.own ? 'ok' : 'warn');
+	} catch (e) {
+		if (e.message !== 'Locked') toast(e.message, 'bad');
+	}
+}
+
+function loadFromLink(text) {
+	const m = /channels\/(\d{17,20})\/(\d{17,20})\/(\d{17,20})/.exec(text ?? '');
+	if (!m) return toast('Paste a message link (right-click the message → Copy Message Link).', 'warn');
+	if (m[1] !== state.guildId) return toast('That link is from a different server. Switch servers first.', 'warn');
+	return loadMessage(m[2], m[3]);
+}
 
 function viewSend() {
 	const preview = h('div');
@@ -349,6 +385,11 @@ function viewSend() {
 				),
 				h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: m.unique, onchange: e => { m.unique = e.target.checked; update(); } }), 'Pick one only'),
 			),
+			h('label', { class: 'field' },
+				h('span', { class: 'label' }, 'Category (groups your menus, e.g. Games, Events, Interests)'),
+				h('input', { type: 'text', list: 'menu-categories', maxLength: 50, value: m.category ?? '', placeholder: 'Games', oninput: e => { m.category = e.target.value; saveDraft(); } }),
+				h('datalist', { id: 'menu-categories' }, (state.guild.menuCategories ?? []).map(c => h('option', { value: c }))),
+			),
 			h('p', { class: 'hint' }, reactions
 				? 'People react with the emoji to get the role, and remove their reaction to lose it. Up to 20 roles.'
 				: 'People click a button to get the role, and click again to remove it. Emoji are optional. Up to 25 roles.'),
@@ -386,11 +427,26 @@ function viewSend() {
 	h('optgroup', { label: 'Channels' }, state.guild.channels.map(c => h('option', { value: `<#${c.id}>` }, `#${c.name}`))),
 	);
 
-	const sendBtn = h('button', { class: 'primary', onclick: () => sendMessage(sendBtn) }, 'Send to Discord');
+	const editing = draft.editing;
+	const sendBtn = h('button', { class: 'primary', onclick: () => sendMessage(sendBtn) }, editing ? 'Save changes' : 'Send to Discord');
+	const stopEditing = () => { draft.editing = null; store.set('draft', draft); render(); };
+
+	const linkInput = h('input', { type: 'url', class: 'grow', placeholder: 'Paste a message link to edit it…', onkeydown: e => { if (e.key === 'Enter') loadFromLink(linkInput.value); } });
+	const channelPicker = channelSelect(draft.channelId, e => { draft.channelId = e.target.value; saveDraft(); });
+	if (editing) channelPicker.disabled = true;
 
 	const form = h('div', {},
+		editing
+			? h('div', { class: 'banner' },
+				'Editing ', h('a', { href: editing.url, target: '_blank', rel: 'noreferrer' }, 'this message'), '. Saving changes updates it in place.',
+				editing.own ? null : ' The bot didn\'t send it, so only the reaction roles can change (the text and embed are ignored).',
+				' ', h('button', { type: 'button', class: 'ghost small', onclick: stopEditing }, 'Stop editing (post as new)'))
+			: h('div', { class: 'card' },
+				h('div', { class: 'row' }, linkInput, h('button', { type: 'button', class: 'secondary small', onclick: () => loadFromLink(linkInput.value) }, 'Load message')),
+				h('p', { class: 'hint', style: { marginBottom: 0 } }, 'Load an embed or role menu that\'s already posted to change it, like Carl-bot\'s edit.'),
+			),
 		h('div', { class: 'card' },
-			h('label', { class: 'field' }, h('span', { class: 'label' }, 'Channel'), channelSelect(draft.channelId, e => { draft.channelId = e.target.value; saveDraft(); })),
+			h('label', { class: 'field' }, h('span', { class: 'label' }, 'Channel'), channelPicker),
 			text(draft, 'content', { label: 'Message text (above the embed, optional)', max: 2000, area: true }),
 		),
 		h('details', { class: 'card collapse', open: draft.embedOn, ontoggle: e => { draft.embedOn = e.target.open; update(); } },
@@ -435,7 +491,7 @@ function viewSend() {
 
 	update();
 	return [
-		h('h1', {}, 'Send a message'),
+		h('h1', {}, editing ? 'Edit a message' : 'Send a message'),
 		h('p', { class: 'lead' }, 'Build an embed, optionally turn it into a role menu, and post it to any channel.'),
 		permissionBanner(),
 		h('div', { class: 'composer' }, form, h('div', { class: 'preview-col' }, h('div', { class: 'label', style: { marginBottom: '6px' } }, 'Preview'), preview)),
@@ -482,77 +538,102 @@ async function sendMessage(btn) {
 	if (!draft.channelId) return toast('Pick a channel first.', 'warn');
 	const items = draft.menuOn ? draft.menu.items.filter(i => i.roleId) : [];
 	if (draft.menuOn && draft.menu.items.length && !items.length) return toast('Pick a role for each menu row (or close the Role menu section).', 'warn');
+	const editing = draft.editing;
 	const body = {
-		channelId: draft.channelId,
+		channelId: editing?.channelId ?? draft.channelId,
 		content: draft.content,
 		embed: draft.embedOn ? draft.embed : null,
-		menu: items.length ? { mode: draft.menu.mode, unique: draft.menu.unique, items } : null,
+		menu: items.length ? { mode: draft.menu.mode, unique: draft.menu.unique, category: draft.menu.category ?? '', items } : null,
 		allowMentions: draft.allowMentions,
 	};
+	if (editing?.hadMenu && !items.length && !(await modal({ title: 'Save without a role menu?', text: 'This message\'s role menu will stop giving roles. People keep the roles they already have.', confirm: 'Save' }))) return;
+	const label = btn.textContent;
 	btn.disabled = true;
-	btn.textContent = 'Sending…';
+	btn.textContent = editing ? 'Saving…' : 'Sending…';
 	try {
-		const res = await api(`/guilds/${state.guildId}/messages`, { method: 'POST', body });
-		toast(items.length ? 'Role menu posted!' : 'Message sent!', 'ok', { href: res.url, text: 'Open in Discord' });
+		const res = editing
+			? await api(`/guilds/${state.guildId}/messages/${editing.messageId}`, { method: 'PATCH', body })
+			: await api(`/guilds/${state.guildId}/messages`, { method: 'POST', body });
+		const what = editing ? 'Saved!' : items.length ? 'Role menu posted!' : 'Message sent!';
+		toast(what, 'ok', { href: res.url, text: 'Open in Discord' });
 		if (res.warning) toast(res.warning, 'warn');
+		if (editing) { editing.hadMenu = items.length > 0; store.set('draft', draft); }
+		if (items.length && draft.menu.category && !(state.guild.menuCategories ?? []).includes(draft.menu.category)) {
+			state.guild.menuCategories = [...(state.guild.menuCategories ?? []), draft.menu.category];
+		}
 	} catch (e) {
 		if (e.message !== 'Locked') toast(e.message, 'bad');
 	} finally {
 		btn.disabled = false;
-		btn.textContent = 'Send to Discord';
+		btn.textContent = label;
 	}
 }
 
 // ---------- view: role menus ----------
 
 function viewMenus() {
-	const body = h('div', { class: 'card' }, h('div', { class: 'empty' }, 'Loading…'));
+	const body = h('div', {}, h('div', { class: 'card' }, h('div', { class: 'empty' }, 'Loading…')));
+
+	const menuRow = (m, reload) => h('tr', {},
+		h('td', {}, h('div', { style: { fontWeight: 600 } }, m.title), h('div', { class: 'hint' }, m.createdAt ? new Date(m.createdAt).toLocaleString() : '')),
+		h('td', {}, m.channelName ? `#${m.channelName}` : h('span', { class: 'badge warn' }, 'channel deleted')),
+		h('td', {}, m.mode === 'reactions' ? 'Reactions' : 'Buttons', m.unique ? h('div', { class: 'hint' }, 'pick one') : null),
+		h('td', {}, m.items.length ? h('div', { class: 'chips' }, m.items.map(i => {
+			const r = roleById(i.roleId);
+			return h('span', { class: 'chip' }, emojiPreview(i.emoji), h('span', { class: 'dot', style: { background: roleColor(r) } }), r?.name ?? 'deleted role');
+		})) : h('span', { class: 'hint' }, 'no roles yet')),
+		h('td', {}, h('div', { class: 'row', style: { justifyContent: 'flex-end', flexWrap: 'nowrap' } },
+			h('a', { href: m.url, target: '_blank', rel: 'noreferrer' }, 'Open'),
+			m.channelName ? h('button', { class: 'secondary small', onclick: () => loadMessage(m.channelId, m.messageId) }, 'Edit') : null,
+			h('button', {
+				class: 'danger small',
+				onclick: async () => {
+					const ok = await modal({
+						title: 'Delete this role menu?',
+						text: m.mode === 'reactions'
+							? 'Reactions on it will stop giving roles. People keep the roles they already have.'
+							: 'It will be removed from this list. Its buttons keep working until the message is deleted.',
+						confirm: 'Delete', danger: true,
+						checkbox: { label: 'Also delete the message in Discord', checked: true },
+					});
+					if (!ok) return;
+					try {
+						const res = await api(`/guilds/${state.guildId}/menus/${m.messageId}?deleteMessage=${ok.checked ? 1 : 0}`, { method: 'DELETE' });
+						toast(`Menu deleted.${res.note ?? ''}`);
+						reload();
+					} catch (e) { toast(e.message, 'bad'); }
+				},
+			}, 'Delete'),
+		)),
+	);
+
 	const load = async () => {
 		let menus;
-		try { menus = await api(`/guilds/${state.guildId}/menus`); } catch (e) { body.replaceChildren(h('div', { class: 'empty' }, e.message)); return; }
+		try { menus = await api(`/guilds/${state.guildId}/menus`); } catch (e) { body.replaceChildren(h('div', { class: 'card' }, h('div', { class: 'empty' }, e.message))); return; }
 		if (!menus.length) {
-			body.replaceChildren(h('div', { class: 'empty' }, 'No role menus yet. Make one from Send message → Role menu.'));
+			body.replaceChildren(h('div', { class: 'card' }, h('div', { class: 'empty' }, 'No role menus yet. Make one from Send message → Role menu, or with /reactionrole create in Discord.')));
 			return;
 		}
-		body.replaceChildren(h('table', {},
-			h('thead', {}, h('tr', {}, h('th', {}, 'Menu'), h('th', {}, 'Channel'), h('th', {}, 'Type'), h('th', {}, 'Roles'), h('th', {}, ''))),
-			h('tbody', {}, menus.map(m => h('tr', {},
-				h('td', {}, h('div', { style: { fontWeight: 600 } }, m.title), h('div', { class: 'hint' }, m.createdAt ? new Date(m.createdAt).toLocaleString() : '')),
-				h('td', {}, m.channelName ? `#${m.channelName}` : h('span', { class: 'badge warn' }, 'channel deleted')),
-				h('td', {}, m.mode === 'reactions' ? 'Reactions' : 'Buttons', m.unique ? h('div', { class: 'hint' }, 'pick one') : null),
-				h('td', {}, h('div', { class: 'chips' }, m.items.map(i => {
-					const r = roleById(i.roleId);
-					return h('span', { class: 'chip' }, emojiPreview(i.emoji), h('span', { class: 'dot', style: { background: roleColor(r) } }), r?.name ?? 'deleted role');
-				}))),
-				h('td', {}, h('div', { class: 'row', style: { justifyContent: 'flex-end', flexWrap: 'nowrap' } },
-					h('a', { href: m.url, target: '_blank', rel: 'noreferrer' }, 'Open'),
-					h('button', {
-						class: 'danger small',
-						onclick: async () => {
-							const ok = await modal({
-								title: 'Delete this role menu?',
-								text: m.mode === 'reactions'
-									? 'Reactions on it will stop giving roles. People keep the roles they already have.'
-									: 'It will be removed from this list. Its buttons keep working until the message is deleted.',
-								confirm: 'Delete', danger: true,
-								checkbox: { label: 'Also delete the message in Discord', checked: true },
-							});
-							if (!ok) return;
-							try {
-								const res = await api(`/guilds/${state.guildId}/menus/${m.messageId}?deleteMessage=${ok.checked ? 1 : 0}`, { method: 'DELETE' });
-								toast(`Menu deleted.${res.note ?? ''}`);
-								load();
-							} catch (e) { toast(e.message, 'bad'); }
-						},
-					}, 'Delete'),
-				)),
-			))),
-		));
+		// Group by category (Games, Events, Interests…), uncategorised last.
+		const groups = new Map();
+		for (const m of menus) {
+			const cat = m.category || '';
+			if (!groups.has(cat)) groups.set(cat, []);
+			groups.get(cat).push(m);
+		}
+		const order = [...groups.keys()].sort((a, b) => (a === '') - (b === '') || a.localeCompare(b));
+		body.replaceChildren(...order.flatMap(cat => [
+			h('h3', {}, cat || 'No category', h('span', { class: 'hint', style: { marginLeft: '8px', fontWeight: 400 } }, `${groups.get(cat).length} menu${groups.get(cat).length === 1 ? '' : 's'}`)),
+			h('div', { class: 'card', style: { padding: 0, marginBottom: '16px' } }, h('table', {},
+				h('thead', {}, h('tr', {}, h('th', {}, 'Menu'), h('th', {}, 'Channel'), h('th', {}, 'Type'), h('th', {}, 'Roles'), h('th', {}, ''))),
+				h('tbody', {}, groups.get(cat).map(m => menuRow(m, load))),
+			)),
+		]));
 	};
 	load();
 	return [
 		h('h1', {}, 'Role menus'),
-		h('p', { class: 'lead' }, 'Menus you posted from this dashboard. Menus made with /rolemenu in Discord work too, but only show up here if made from the dashboard.'),
+		h('p', { class: 'lead' }, 'Menus made here or with /reactionrole, grouped by category. Press Edit to change a menu\'s embed, roles or emoji. (Button menus made with /rolemenu work too, but don\'t show up here.)'),
 		body,
 	];
 }

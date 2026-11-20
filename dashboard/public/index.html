@@ -5,7 +5,7 @@
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<meta name="referrer" content="no-referrer">
 	<title>Silvered Dashboard</title>
-	<link rel="stylesheet" href="/style.css">
+	<link rel="stylesheet" href="style.css">
 </head>
 <body>
 	<div id="app">
@@ -39,7 +39,7 @@
 	<div id="login" class="overlay" hidden>
 		<form class="card login-card" id="login-form">
 			<h1>Silvered Dashboard</h1>
-			<p>Paste the access key from the bot's console. It's printed on startup as<br><code>Dashboard: http://localhost:3001/#key=…</code><br>You can also just click that link.</p>
+			<p>Paste your access key. That's the <code>DASHBOARD_KEY</code> you set on the host, or, when running on your own computer, the key in the link the bot prints on startup (<code>Dashboard: http://localhost:3001/#key=…</code>).</p>
 			<input id="login-key" type="password" placeholder="Access key" autocomplete="off" required>
 			<button type="submit" class="primary">Unlock</button>
 			<p class="error" id="login-error"></p>
@@ -47,6 +47,6 @@
 	</div>
 
 	<div id="toasts"></div>
-	<script src="/app.js"></script>
+	<script src="app.js"></script>
 </body>
 </html>

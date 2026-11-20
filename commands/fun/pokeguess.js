@@ -13,7 +13,7 @@ module.exports = {
 	async execute(interaction) {
 
         const user = interaction.user;
-        const member = interaction.guild.members.cache.get(user.id);
+        const member = interaction.member;
         const baseURL = "https://pokeapi.co/api/v2/pokemon/";
 
         const generationInfo = {
@@ -109,4 +109,4 @@ module.exports = {
                 await interaction.reply('An error occurred while fetching the Pokémon.');
             }
     },
-};
+};

@@ -5,7 +5,8 @@ module.exports = {
 		.setName('ping')
 		.setDescription('Checks the ping of bot'),
 	async execute(interaction) {
-		const sent = await interaction.reply({ content: 'Pinging...', fetchReply: true });
-		interaction.editReply(`Roundtrip latency: ${sent.createdTimestamp - interaction.createdTimestamp}ms`);
+		const response = await interaction.reply({ content: 'Pinging...', withResponse: true });
+		const sent = response.resource.message;
+		await interaction.editReply(`Roundtrip latency: ${sent.createdTimestamp - interaction.createdTimestamp}ms | WebSocket: ${interaction.client.ws.ping}ms`);
 	},
 };

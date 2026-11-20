@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
 
 module.exports = {
 	data: new SlashCommandBuilder()
@@ -12,6 +12,7 @@ module.exports = {
                 { name: ':gear:  Main Page', value: 'main menu for browsing commands!\n' },
                 { name: ':tools:  Utility Page', value: 'all the basic utility commands!\n' },
                 { name: ':tada:  Fun Page', value: `infinite fun! infinite fun commands!\n` },
+                { name: ':label:  Roles Page', value: `role menus, staff roles, autorole!\n` },
             )
             .setFooter({ text: 'Main'})
             .setTimestamp()
@@ -22,6 +23,7 @@ module.exports = {
             .addFields(
                 { name: '/avatar *[mention]*', value: `displays avatar of the mentioned user`},
                 { name: '/botstats', value: `displays statistics relating to the bot`},
+                { name: '/dashboard', value: `get the link to the web dashboard (needs Manage Roles)`},
                 { name: '/help', value: `the classic help command`},
                 { name: '/ping', value: `checks the ping of bot`},
                 { name: '/server', value: `provides information about the server`},
@@ -41,6 +43,22 @@ module.exports = {
             .setFooter({ text: 'Fun' })
             .setTimestamp()
 
+        const embed4 = new EmbedBuilder()
+            .setColor('LuminousVividPink')
+            .setTitle(`:label:   **< __Role Center__ >**`)
+            .addFields(
+                { name: '/rolemenu create', value: `post a button menu people click to get roles (games, pings...)`},
+                { name: '/rolemenu add | remove', value: `add/remove a role on an existing menu`},
+                { name: '/reactionrole create | add | remove', value: `reaction role menus: react with an emoji to get a role`},
+                { name: '/reactionrole edit | list | delete', value: `set a menu's category (games, events...) or pick-one, list or delete menus`},
+                { name: '/embed send | edit', value: `post or edit a custom embed with a pop-up form`},
+                { name: '/setup-roles', value: `create Mod > Semi-Mod > Perms > Non-User roles (admins)`},
+                { name: '/role add | remove | info', value: `give or take a role from someone`},
+                { name: '/autorole set | off | show', value: `give new members a role automatically`},
+            )
+            .setFooter({ text: 'Roles' })
+            .setTimestamp()
+
         const button = new ActionRowBuilder()
         .addComponents(
             new ButtonBuilder()
@@ -56,33 +74,45 @@ module.exports = {
             new ButtonBuilder()
                 .setCustomId('fun')
                 .setLabel('-Fun-')
+                .setStyle(ButtonStyle.Primary),
+
+            new ButtonBuilder()
+                .setCustomId('roles')
+                .setLabel('-Roles-')
                 .setStyle(ButtonStyle.Primary)
         )
 
         const message = await interaction.reply({ embeds: [embed], components: [button] });
-        const collector = await message.createMessageComponentCollector();
+        const collector = message.createMessageComponentCollector({ time: 5 * 60 * 1000 });
 
         collector.on('collect', async i => {
             if (i.customId === 'main') {
                 if (i.user.id !== interaction.user.id) {
-                    return await i.reply({ content: `Only ${interaction.user.tag} can use these buttons`, ephemeral: true})
+                    return await i.reply({ content: `Only ${interaction.user.tag} can use these buttons`, flags: MessageFlags.Ephemeral })
                 }
                 await i.update({ embeds: [embed], components: [button] })
             }
 
             if (i.customId === 'utility') {
                 if (i.user.id !== interaction.user.id) {
-                    return await i.reply({ content: `Only ${interaction.user.tag} can use these buttons`, ephemeral: true})
+                    return await i.reply({ content: `Only ${interaction.user.tag} can use these buttons`, flags: MessageFlags.Ephemeral })
                 }
                 await i.update({ embeds: [embed2], components: [button] })
             }
 
             if (i.customId === 'fun') {
                 if (i.user.id !== interaction.user.id) {
-                    return await i.reply({ content: `Only ${interaction.user.tag} can use these buttons`, ephemeral: true})
+                    return await i.reply({ content: `Only ${interaction.user.tag} can use these buttons`, flags: MessageFlags.Ephemeral })
                 }
                 await i.update({ embeds: [embed3], components: [button] })
             }
+
+            if (i.customId === 'roles') {
+                if (i.user.id !== interaction.user.id) {
+                    return await i.reply({ content: `Only ${interaction.user.tag} can use these buttons`, flags: MessageFlags.Ephemeral })
+                }
+                await i.update({ embeds: [embed4], components: [button] })
+            }
         })
 	},
-};
+};

@@ -250,6 +250,7 @@ async function del(interaction) {
 
 module.exports = {
 	data,
+	syncList,
 	async execute(interaction) {
 		const handlers = { create, add, remove, edit, list, delete: del };
 		return handlers[interaction.options.getSubcommand()](interaction);

@@ -52,7 +52,8 @@ module.exports = {
                 { name: '/reactionrole create | add | remove', value: `reaction role menus: react with an emoji to get a role`},
                 { name: '/reactionrole edit | list | delete', value: `set a menu's category (games, events...) or pick-one, list or delete menus`},
                 { name: '/embed send | edit', value: `post or edit a custom embed with a pop-up form`},
-                { name: '/setup-roles', value: `create Mod > Semi-Mod > Perms > Non-User roles (admins)`},
+                { name: '/roles-import', value: `paste a list of roles: creates them and posts a reaction menu per category`},
+                { name: '/setup-roles', value:`create Mod > Semi-Mod > Perms > Non-User roles (admins)`},
                 { name: '/role add | remove | info', value: `give or take a role from someone`},
                 { name: '/autorole set | off | show', value: `give new members a role automatically`},
             )

@@ -89,6 +89,9 @@ client.on(Events.InteractionCreate, async interaction => {
 		if (interaction.isModalSubmit() && interaction.customId.startsWith('embed:')) {
 			return await client.commands.get('embed').handleModal(interaction);
 		}
+		if (interaction.isModalSubmit() && interaction.customId.startsWith('rolesimport:')) {
+			return await client.commands.get('roles-import').handleModal(interaction);
+		}
 		if (interaction.isAutocomplete()) {
 			return await client.commands.get(interaction.commandName)?.autocomplete?.(interaction);
 		}

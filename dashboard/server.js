@@ -2,7 +2,7 @@
 //
 // Two ways to run it (DASHBOARD in .env):
 //   local  (default) its own server on 127.0.0.1:DASHBOARD_PORT, only reachable from this computer.
-//   public shares the bot's main port (Wispbyte's SERVER_PORT) at /dashboard/, reachable from anywhere.
+//   public shares the bot's main port (PORT) at /dashboard/, reachable from anywhere.
 //
 // Security: every API call needs the access key (DASHBOARD_KEY). The key is sent in a custom header,
 // which also stops other websites from making requests to it from your browser. Too many wrong keys
@@ -311,7 +311,7 @@ async function api(client, req, res, url) {
 			memberCount: guild.memberCount,
 			channels,
 			roles,
-			emojis: guild.emojis.cache.map(e => ({ id: e.id, name: e.name, animated: e.animated, url: e.imageURL({ size: 48 }), text: e.toString() })),
+			emojis: guild.emojis.cache.map(e => ({ id: e.id, name: e.name, animated: e.animated, url: e.imageURL({ size: 64 }), text: e.toString() })),
 			me: { highestRole: me.roles.highest.name, permissions: me.permissions.toArray(), manageRoles: me.permissions.has(PermissionFlagsBits.ManageRoles) },
 			autorole: storage.get(guild.id, 'autorole') ?? null,
 			menuCategories: roleMenus.categories(guild.id),

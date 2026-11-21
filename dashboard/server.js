@@ -14,6 +14,7 @@ const crypto = require('node:crypto');
 const { ChannelType, PermissionFlagsBits, PermissionsBitField } = require('discord.js');
 const { botCantManage } = require('../roleUtils');
 const { buildRows, makeButton } = require('../commands/roles/rolemenu');
+const { syncList } = require('../commands/roles/reactionrole');
 const roleMenus = require('../roleMenus');
 const storage = require('../storage');
 const whois = require('../whois');
@@ -199,7 +200,7 @@ function readMenu(guild, channel, raw) {
 			throw new HttpError(400, `I need Add Reactions and Read Message History in #${channel.name}.`);
 		}
 	}
-	return { mode: raw.mode, unique: Boolean(raw.unique), category: str(raw.category, 50), items };
+	return { mode: raw.mode, unique: Boolean(raw.unique), category: str(raw.category, 50), autoList: raw.mode === 'reactions' && raw.autoList === true, items };
 }
 
 function buttonRows(menu) {
@@ -250,10 +251,12 @@ async function attachMenu(guild, message, menu, previous) {
 			category: menu.category || undefined,
 			title: roleMenus.titleOf(message),
 			items: saved,
-			autoList: previous?.autoList || undefined,
+			autoList: previous?.autoList || menu.autoList || undefined,
 			createdAt: previous?.createdAt ?? new Date().toISOString(),
 			updatedAt: previous ? new Date().toISOString() : undefined,
 		});
+		// Self-updating menus: rewrite the role list to match.
+		if (message.author) await syncList(message, roleMenus.get(guild.id, message.id));
 	} else if (previous) {
 		roleMenus.remove(guild.id, message.id);
 	}

@@ -44,7 +44,9 @@ function toast(msg, kind = 'ok', link) {
 function modal({ title, text, confirm = 'OK', danger = false, checkbox, input }) {
 	return new Promise(resolve => {
 		const box = checkbox ? h('input', { type: 'checkbox', checked: Boolean(checkbox.checked) }) : null;
-		const field = input ? h('input', { type: 'text', value: input.value ?? '', placeholder: input.placeholder ?? '', maxLength: input.max ?? 100, onkeydown: e => { if (e.key === 'Enter') close({ checked: box?.checked ?? false, value: field.value.trim() }); } }) : null;
+		const field = input?.multiline
+			? h('textarea', { rows: 12, placeholder: input.placeholder ?? '', maxLength: input.max ?? 4000, style: { width: '100%' } })
+			: input ? h('input', { type: 'text', value: input.value ?? '', placeholder: input.placeholder ?? '', maxLength: input.max ?? 100, onkeydown: e => { if (e.key === 'Enter') close({ checked: box?.checked ?? false, value: field.value.trim() }); } }) : null;
 		const close = val => { overlay.remove(); resolve(val); };
 		const overlay = h('div', { class: 'overlay', onclick: e => { if (e.target === overlay) close(null); } },
 			h('div', { class: 'card modal', role: 'dialog', 'aria-modal': 'true' },
@@ -314,6 +316,100 @@ function emojiPreview(text) {
 
 // ---------- view: send message ----------
 
+// ---------- paste a whole role menu ----------
+
+const PASTE_EXAMPLE = '# 🎮 pick ur games :3\nReact for the games you play.\n🔫 - valorant\n⛏️ - minecraft\n🌱 - indie games';
+
+/**
+ * Reads a pasted menu:  "# Title (pick one)", then "emoji - role name #hexcolour" lines.
+ * Any other line becomes the text above the list.
+ */
+function parseMenuPaste(text) {
+	const out = { title: '', unique: false, intro: [], rows: [] };
+	for (const raw of text.split('\n')) {
+		const line = fixEmoji(raw.trim());
+		if (!line) continue;
+		if (/^#\s/.test(line)) {
+			out.unique = /\(pick one\)\s*$/i.test(line);
+			out.title = line.replace(/^#\s*/, '').replace(/\(pick one\)\s*$/i, '').trim();
+			continue;
+		}
+		const m = /^(<a?:\w+:\d+>|\S+)\s+(?:[-–—:]\s*)?(.+?)(?:\s+(#[0-9a-f]{6}))?$/i.exec(line);
+		const isEmoji = m && (/^<a?:\w+:\d+>$/.test(m[1]) || /^(?:\p{Extended_Pictographic}|\p{Regional_Indicator}|[0-9#*]\uFE0F?\u20E3)/u.test(m[1]));
+		if (isEmoji) out.rows.push({ emoji: m[1], name: m[2].trim(), color: m[3] ?? null });
+		else out.intro.push(line);
+	}
+	return out;
+}
+
+async function pasteMenu() {
+	const res = await modal({
+		title: 'Paste a list',
+		text: 'One role per line, like "❤️ - Red". Add "# Title" on top, and "(pick one)" after it if people can only have one. Roles you already have are matched by name.',
+		confirm: 'Fill in',
+		input: { multiline: true, placeholder: PASTE_EXAMPLE },
+	});
+	if (!res?.value) return;
+	const parsed = parseMenuPaste(res.value);
+	if (!parsed.rows.length) return toast('No role lines found. Each one needs an emoji first, like "🔫 - valorant".', 'warn');
+
+	const problems = [];
+	const seen = new Set();
+	const rows = parsed.rows.filter(r => {
+		const key = r.emoji.replace(/\uFE0F/g, '');
+		if (seen.has(key)) { problems.push(`${r.name}: ${r.emoji} is already used`); return false; }
+		seen.add(key);
+		return true;
+	});
+	if (rows.length > 20) { problems.push(`Only the first 20 fit (Discord's reaction limit), so ${rows.length - 20} were left off`); rows.length = 20; }
+
+	const find = name => state.guild.roles.find(r => !r.everyone && r.name.toLowerCase() === name.toLowerCase());
+	const missing = rows.filter(r => !find(r.name));
+	if (missing.length) {
+		const ok = await modal({ title: `Create ${missing.length} new role${missing.length === 1 ? '' : 's'}?`, text: `These don't exist yet: ${missing.map(r => r.name).join(', ')}. They'll have no permissions.`, confirm: 'Create them' });
+		if (!ok) return;
+		for (const r of missing) {
+			try {
+				const out = await api(`/guilds/${state.guildId}/roles`, { method: 'POST', body: { name: r.name, color: r.color, permissions: [] } });
+				state.guild.roles.push(out.role);
+			} catch (e) {
+				if (e.message === 'Locked') return;
+				problems.push(`${r.name}: ${e.message}`);
+			}
+		}
+	}
+
+	const items = [];
+	for (const r of rows) {
+		const role = find(r.name);
+		if (!role) continue;
+		if (role.locked || role.managed) { problems.push(`${role.name}: the bot can't give this role (move it below the bot's role)`); continue; }
+		if (items.some(i => i.roleId === role.id)) { problems.push(`${role.name} is on the list twice`); continue; }
+		items.push({ roleId: role.id, emoji: r.emoji, label: '' });
+	}
+	if (!items.length) return toast(problems[0] ?? 'No usable roles.', 'bad');
+
+	const list = items.map(i => `${i.emoji} - <@&${i.roleId}>`).join('\n');
+	const title = parsed.title || draft.embed.title;
+	const lower = title.toLowerCase();
+	draft.embedOn = true;
+	draft.embed.title = title;
+	draft.embed.description = [parsed.intro.join('\n'), list].filter(Boolean).join('\n\n');
+	draft.menuOn = true;
+	draft.menu = {
+		...draft.menu,
+		mode: 'reactions',
+		unique: parsed.unique,
+		autoList: true,
+		category: lower.includes('colo') ? 'Colours' : lower.includes('game') ? 'Games' : lower.includes('event') ? 'Events' : draft.menu.category,
+		items,
+	};
+	store.set('draft', draft);
+	render();
+	toast(`Filled in ${items.length} roles. Pick a channel, check the preview, then send.`);
+	if (problems.length) toast(`Skipped: ${problems.slice(0, 5).join('; ')}`, 'warn');
+}
+
 const DEFAULT_DRAFT = () => ({
 	channelId: '',
 	content: '',
@@ -328,6 +424,12 @@ const DEFAULT_DRAFT = () => ({
 
 // Ready-made starting points for common messages. Pick one, then add your roles and tweak.
 const COLOUR_EMOJI = { red: '❤️', orange: '🧡', yellow: '💛', green: '💚', blue: '💙', purple: '💜', pink: '💗', gray: '🤍', grey: '🤍', white: '🤍', black: '🖤', brown: '🤎' };
+// Game and company tags, in menu order, each with its own emoji. Matched against your role names.
+const GAME_EMOJI = [
+	['valorant', '🔫'], ['minecraft', '⛏️'], ['league', '⚔️'], ['roblox', '🧱'], ['overwatch', '🦸'], ['fortnite', '🪂'], ['apex', '🦊'],
+	['counter', '💣'], ['terraria', '🌳'], ['stardew', '🌾'], ['osu', '⭕'], ['among us', '🚀'], ['indie', '🌱'],
+	['gacha', '🎰'], ['hoyo', '✨'], ['mihoyo', '🌠'], ['cygames', '🐎'], ['riot', '👊'], ['nintendo', '🍄'], ['steam', '♨️'],
+];
 const TEMPLATES = {
 	colours: {
 		label: '🎨 Colour roles',
@@ -349,8 +451,20 @@ const TEMPLATES = {
 	},
 	games: {
 		label: '🎮 Games',
-		embed: { title: '🎮 What do you play?', description: 'React for the games you play, so people know who to ping for a match. Remove your reaction to drop the role.', color: '#5865f2' },
-		menu: { mode: 'reactions', unique: false, category: 'Games' },
+		embed: { title: '🎮 pick ur games :3', description: 'React for the games you play. Remove your reaction to drop the role.', color: '#5865f2' },
+		menu: { mode: 'reactions', unique: false, category: 'Games', autoList: true },
+		// Pre-fills roles that match a game or company. The bot keeps the list up to date after that.
+		items: () => {
+			const roles = assignableRoles();
+			const used = new Set();
+			return GAME_EMOJI.flatMap(([word, emoji]) => {
+				const role = roles.find(r => !used.has(r.id) && r.name.toLowerCase().includes(word));
+				if (!role) return [];
+				used.add(role.id);
+				return [{ roleId: role.id, emoji, label: '' }];
+			}).slice(0, 20);
+		},
+		describe: items => `React for the games you play. Remove your reaction to drop the role.\n\n${items.map(i => `${i.emoji} - <@&${i.roleId}>`).join('\n')}`,
 	},
 	events: {
 		label: '📅 Events',
@@ -562,6 +676,7 @@ function viewSend() {
 		editing ? null : h('div', { class: 'card' },
 			h('div', { class: 'label', style: { marginBottom: '8px' } }, 'Start from a template'),
 			h('div', { class: 'row' },
+				h('button', { type: 'button', class: 'primary small', onclick: pasteMenu }, '📋 Paste a list'),
 				Object.values(TEMPLATES).map(t => h('button', { type: 'button', class: 'secondary small', onclick: () => useTemplate(t) }, t.label)),
 				Object.entries(saved).map(([name, t]) => h('span', { class: 'chip' },
 					h('button', { type: 'button', style: { color: 'inherit' }, onclick: () => useTemplate(savedTemplate(name, t)) }, `⭐ ${name}`),
@@ -688,7 +803,7 @@ async function sendMessage(btn, sendAt = null) {
 		channelId: editing?.channelId ?? draft.channelId,
 		content: fixEmoji(draft.content),
 		embed: draft.embedOn ? fixEmbedEmoji(draft.embed) : null,
-		menu: items.length ? { mode: draft.menu.mode, unique: draft.menu.unique, category: draft.menu.category ?? '', items } : null,
+		menu: items.length ? { mode: draft.menu.mode, unique: draft.menu.unique, category: draft.menu.category ?? '', autoList: draft.menu.autoList === true, items } : null,
 		allowMentions: draft.allowMentions,
 	};
 	if (sendAt) {

@@ -52,7 +52,10 @@ module.exports = {
                 { name: '/reactionrole create | add | remove', value: `reaction role menus: react with an emoji to get a role`},
                 { name: '/reactionrole edit | list | delete', value: `set a menu's category (games, events...) or pick-one, list or delete menus`},
                 { name: '/embed send | edit', value: `post or edit a custom embed with a pop-up form`},
-                { name: '/roles-import', value: `paste a list of roles: creates them and posts a reaction menu per category`},
+                { name: '/whois set | clear | lock | post | unpost', value: `who's who: everyone in the server with a note, grouped by role (updates itself)`},
+                { name: '/aboutme', value: `write your own line on the who's who list`},
+                { name: '/event create | list | cancel | timezone', value: `post an event and ping its role before it starts`},
+                { name: '/roles-import', value:`paste a list of role names: creates them and posts a button menu per category`},
                 { name: '/setup-roles', value:`create Mod > Semi-Mod > Perms > Non-User roles (admins)`},
                 { name: '/role add | remove | info', value: `give or take a role from someone`},
                 { name: '/autorole set | off | show', value: `give new members a role automatically`},
@@ -116,4 +119,4 @@ module.exports = {
             }
         })
 	},
-};
+};

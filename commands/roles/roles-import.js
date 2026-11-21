@@ -1,14 +1,17 @@
 // /roles-import: paste a list of roles, get the roles created and a reaction menu per category.
 //
-//   # Games
-//   🎮 Minecraft #2ecc71
-//   🔫 Valorant
-//   # Pronouns (pick one)
-//   💙 he/him
+//   # games
+//   minecraft #2ecc71
+//   valorant
+//   # pronouns (pick one)
+//   he/him
 //
 // "# Heading" starts a category (one menu each; "(pick one)" makes it pick-one).
-// Each other line is: emoji, role name, optional #hex colour.
-// Roles that already exist (same name) are reused, not duplicated. Nothing is deleted.
+// Each other line is: role name, optional #hex colour. Names without an emoji become lowercase
+// and the menu uses buttons with the name on them.
+// Start a line with an emoji instead (🎮 Minecraft) to keep the name as typed; a category where
+// every line has an emoji gets a reaction menu.
+// Roles that already exist (any capitalisation) are reused and renamed to match. Nothing is deleted.
 const {
 	SlashCommandBuilder, PermissionFlagsBits: P, InteractionContextType, MessageFlags, ChannelType, EmbedBuilder,
 	ModalBuilder, LabelBuilder, TextInputBuilder, TextInputStyle,
@@ -17,16 +20,19 @@ const roleMenus = require('../../roleMenus');
 const { botCantManage, memberCantManage } = require('../../roleUtils');
 const { parseColor } = require('../../embeds');
 const { syncList } = require('./reactionrole');
+const { buildRows, makeButton } = require('./rolemenu');
 
 const EPHEMERAL = MessageFlags.Ephemeral;
-const MAX_ITEMS = 20; // reactions per message
+const MAX_REACTIONS = 20; // per message
+const MAX_BUTTONS = 25; // per message
 const DEFAULT_COLOR = 0xff69b4;
 const INTRO = 'React below to get a role. Remove your reaction to lose it.';
+const BUTTON_INTRO = 'click a button to get the role. click it again to remove it.';
 const CUSTOM_EMOJI = /^<a?:\w{2,32}:\d{17,20}>$/;
-const UNICODE_EMOJI = /\p{Extended_Pictographic}|\p{Regional_Indicator}|⃣/u;
-const EXAMPLE = '# Games\n🎮 Minecraft #2ecc71\n🔫 Valorant\n# Events\n🎬 Movie Night\n# Pronouns (pick one)\n💙 he/him\n💗 she/her';
+const UNICODE_EMOJI = /^(?:\p{Extended_Pictographic}|\p{Regional_Indicator}|[0-9#*]\uFE0F?\u20E3)/u;
+const EXAMPLE = '# games\nminecraft\nvalorant\nroblox\n# events\nmovie night\n# pronouns (pick one)\nhe/him\nshe/her\nthey/them';
 
-/** Turns the pasted text into [{ category, unique, items: [{ emoji, name, color }] }] plus a list of problems. */
+/** Turns the pasted text into [{ category, unique, items: [{ emoji, name, color }] }] (emoji is null on plain lines) plus a list of problems. */
 function parse(text) {
 	const groups = [];
 	const problems = [];
@@ -42,12 +48,13 @@ function parse(text) {
 			return;
 		}
 		const parts = line.split(/\s+/);
-		const emoji = parts.shift();
+		const first = parts[0];
+		const emoji = CUSTOM_EMOJI.test(first) || UNICODE_EMOJI.test(first) ? parts.shift() : null;
 		let color = null;
 		if (parts.length && /^#[0-9a-f]{6}$/i.test(parts.at(-1))) color = parseColor(parts.pop());
-		const name = parts.join(' ').slice(0, 100);
-		if (!CUSTOM_EMOJI.test(emoji) && !UNICODE_EMOJI.test(emoji)) return problems.push(`Line ${i + 1}: \`${line.slice(0, 60)}\` must start with an emoji`);
-		if (!name) return problems.push(`Line ${i + 1}: no role name after ${emoji}`);
+		const typed = parts.join(' ').slice(0, 100);
+		const name = emoji ? typed : typed.toLowerCase();
+		if (!name) return problems.push(`Line ${i + 1}: no role name in \`${line.slice(0, 60)}\``);
 		if (!current) { current = { category: 'Roles', unique: false, items: [] }; groups.push(current); }
 		current.items.push({ emoji, name, color });
 	});
@@ -56,7 +63,7 @@ function parse(text) {
 
 const data = new SlashCommandBuilder()
 	.setName('roles-import')
-	.setDescription('Paste a list of roles: creates them and posts a reaction menu per category')
+	.setDescription('Paste a list of roles: creates them and posts a menu per category')
 	.setDefaultMemberPermissions(P.ManageRoles)
 	.setContexts(InteractionContextType.Guild)
 	.addChannelOption(o => o.setName('channel').setDescription('Where to post the menus (default: here)').addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement));
@@ -82,8 +89,8 @@ async function execute(interaction) {
 		.setCustomId(`rolesimport:${channel.id}`)
 		.setTitle('Import roles')
 		.addLabelComponents(new LabelBuilder()
-			.setLabel('# Category, then: emoji  Role name  #colour')
-			.setDescription('Add "(pick one)" after a category to make it pick-one. Existing roles are reused.')
+			.setLabel('# Category, then one role name per line')
+			.setDescription('Names go lowercase. Add "(pick one)" after a category for pick-one. Existing roles are reused.')
 			.setTextInputComponent(text));
 	return interaction.showModal(modal);
 }
@@ -110,6 +117,13 @@ async function handleModal(interaction) {
 			if (role) {
 				const problem = botCantManage(guild, role) || memberCantManage(interaction.member, role);
 				if (problem) { problems.push(`${item.name}: ${problem}`); continue; }
+				if (!item.emoji && role.name !== item.name) {
+					try {
+						await role.setName(item.name, `/roles-import by ${interaction.user.tag}`);
+					} catch (e) {
+						problems.push(`${role.name}: couldn't rename it to ${item.name} (${e.message})`);
+					}
+				}
 				reused++;
 			} else {
 				try {
@@ -127,10 +141,35 @@ async function handleModal(interaction) {
 			items.push({ ...item, role });
 		}
 
-		// One menu per 20 roles.
-		for (let start = 0; start < items.length; start += MAX_ITEMS) {
-			const chunk = items.slice(start, start + MAX_ITEMS);
-			const title = start ? `${group.category} (${start / MAX_ITEMS + 1})` : group.category;
+		// Any line without an emoji makes the whole category a button menu.
+		const useButtons = items.some(i => !i.emoji);
+		const perMenu = useButtons ? MAX_BUTTONS : MAX_REACTIONS;
+		for (let start = 0; start < items.length; start += perMenu) {
+			const chunk = items.slice(start, start + perMenu);
+			const title = start ? `${group.category} (${start / perMenu + 1})` : group.category;
+			if (useButtons) {
+				const description = BUTTON_INTRO + (group.unique ? '\n*you can only have one role from this menu.*' : '');
+				try {
+					const message = await channel.send({
+						embeds: [new EmbedBuilder().setTitle(title).setColor(DEFAULT_COLOR).setDescription(description)],
+						components: buildRows(chunk.map(i => makeButton(i.role, group.unique, i.emoji || undefined, i.name))),
+						allowedMentions: { parse: [] },
+					});
+					roleMenus.save(guild.id, message.id, {
+						channelId: channel.id,
+						mode: 'buttons',
+						unique: group.unique,
+						category: group.category,
+						title,
+						items: chunk.map(i => ({ roleId: i.role.id, emoji: i.emoji ?? '', label: i.name.slice(0, 80) })),
+						createdAt: new Date().toISOString(),
+					});
+					posted.push(`[${title}](${message.url}): ${chunk.length} role${chunk.length === 1 ? '' : 's'}${group.unique ? ', pick one' : ''}`);
+				} catch (e) {
+					problems.push(`${title}: couldn't post the menu (${e.message})`);
+				}
+				continue;
+			}
 			let message;
 			try {
 				message = await channel.send({ embeds: [new EmbedBuilder().setTitle(title).setColor(DEFAULT_COLOR).setDescription(INTRO)] });

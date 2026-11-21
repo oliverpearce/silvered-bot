@@ -2,6 +2,11 @@
 const { Client, Collection, Events, GatewayIntentBits, ActivityType, REST, Routes, MessageFlags, Partials } = require('discord.js');
 const { token, clientId, guildId, port, dashboard } = require('./config');
 const roleMenus = require('./roleMenus');
+const whois = require('./whois');
+const welcome = require('./welcome');
+const modlog = require('./modlog');
+const scheduler = require('./scheduler');
+require('./events'); // registers the event reminder job
 const { createDashboardHandler, startDashboard } = require('./dashboard/server');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -21,6 +26,7 @@ const client = new Client({
 		GatewayIntentBits.DirectMessages,
 		GatewayIntentBits.MessageContent,
 		GatewayIntentBits.GuildMessageReactions,
+		GatewayIntentBits.GuildModeration, // bans, for the mod log
 	],
 	// Partials let the bot see reactions on messages sent before it last restarted,
 	// and from people it hasn't cached yet.
@@ -61,11 +67,29 @@ client.once(Events.ClientReady, async c => {
 	} catch (e) {
 		console.error('Failed to register commands:', e);
 	}
+	scheduler.start(c);
 });
 
 // Autorole for new members
 client.on(Events.GuildMemberAdd, member => {
 	client.commands.get('autorole')?.onJoin(member);
+	if (!member.user.bot) whois.scheduleRefresh(member.guild);
+	welcome.send(member, 'join').catch(e => console.warn('[welcome]', e.message));
+});
+
+// Keep the posted "who's who" list up to date
+client.on(Events.GuildMemberRemove, member => {
+	if (member.user?.bot) return;
+	whois.scheduleRefresh(member.guild);
+	welcome.send(member, 'leave').catch(e => console.warn('[welcome]', e.message));
+});
+modlog.attach(client);
+client.on(Events.GuildMemberUpdate, (before, after) => {
+	if (after.user.bot) return;
+	if (before.partial || before.displayName !== after.displayName || before.roles.hoist?.id !== after.roles.hoist?.id) whois.scheduleRefresh(after.guild);
+});
+client.on(Events.GuildRoleUpdate, (before, after) => {
+	if (before.name !== after.name || before.hoist !== after.hoist || before.position !== after.position) whois.scheduleRefresh(after.guild);
 });
 
 // Reaction roles (menus made in the dashboard or with /reactionrole)

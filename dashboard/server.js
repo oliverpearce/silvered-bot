@@ -255,8 +255,9 @@ async function attachMenu(guild, message, menu, previous) {
 			createdAt: previous?.createdAt ?? new Date().toISOString(),
 			updatedAt: previous ? new Date().toISOString() : undefined,
 		});
-		// Self-updating menus: rewrite the role list to match.
-		if (message.author) await syncList(message, roleMenus.get(guild.id, message.id));
+		// New self-updating menus: tidy the list and add the pick-one footer.
+		// Not on edits: the dashboard form already holds the final text, and this message object is the pre-edit copy.
+		if (!previous && message.author) await syncList(message, roleMenus.get(guild.id, message.id));
 	} else if (previous) {
 		roleMenus.remove(guild.id, message.id);
 	}
@@ -481,6 +482,7 @@ async function api(client, req, res, url) {
 				mode: saved.mode,
 				unique: Boolean(saved.unique),
 				category: saved.category ?? '',
+				autoList: Boolean(saved.autoList),
 				items: saved.items.map(i => ({ roleId: i.roleId, emoji: i.emoji ?? '', label: i.label ?? '' })),
 			} : null,
 		};

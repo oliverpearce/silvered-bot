@@ -583,10 +583,10 @@ function viewSend() {
 				? 'People react with the emoji to get the role, and remove their reaction to lose it. Up to 20 roles.'
 				: 'People click a button to get the role, and click again to remove it. Emoji are optional. Up to 25 roles.'),
 			...m.items.map((it, i) => h('div', { class: `menu-item ${reactions ? 'reactions' : ''}` },
-				roleSelect(it.roleId, { onchange: e => { it.roleId = e.target.value; update(); } }),
-				emojiField(it.emoji, v => { it.emoji = v; update(); }),
+				roleSelect(it.roleId, { onchange: e => { it.roleId = e.target.value; writeRowsToDescription(); update(); } }),
+				emojiField(it.emoji, v => { it.emoji = v; writeRowsToDescription(); update(); }),
 				reactions ? null : h('input', { type: 'text', placeholder: 'Button label (default: role name)', value: it.label ?? '', maxLength: 80, oninput: e => { it.label = e.target.value; update(); } }),
-				h('button', { type: 'button', class: 'danger small', onclick: () => { m.items.splice(i, 1); renderMenu(); update(); } }, '✕'),
+				h('button', { type: 'button', class: 'danger small', onclick: () => { m.items.splice(i, 1); writeRowsToDescription(); renderMenu(); update(); } }, '✕'),
 			)),
 			h('div', { class: 'row' },
 				m.items.length < limit ? h('button', { type: 'button', class: 'secondary small', onclick: () => { m.items.push({ roleId: '', emoji: '', label: '' }); renderMenu(); update(); } }, '+ Add role') : null,
@@ -794,8 +794,29 @@ function renderPreview() {
 	);
 }
 
+// Self-updating menus: the "emoji - @role" lines in the description and the menu rows stay the same.
+const MENU_LINE = /^(\S+) (?:- )?<@&(\d{17,20})>$/;
+
+/** Rows changed: rewrite the list in the description. */
+function writeRowsToDescription() {
+	if (!draft.menu.autoList || draft.menu.mode !== 'reactions') return;
+	const intro = (draft.embed.description ?? '').split('\n').filter(l => !MENU_LINE.test(l.trim())).join('\n').trim();
+	const list = draft.menu.items.filter(i => i.roleId && i.emoji).map(i => `${fixEmoji(i.emoji)} - <@&${i.roleId}>`).join('\n');
+	draft.embed.description = [intro, list].filter(Boolean).join('\n\n');
+	const box = document.querySelector('#desc-box');
+	if (box) { box.value = draft.embed.description; box.dispatchEvent(new Event('input')); }
+}
+
+/** Description edited by hand: the rows follow it, so the reactions give what the text says. */
+function readRowsFromDescription() {
+	if (!draft.menuOn || !draft.menu.autoList || draft.menu.mode !== 'reactions') return;
+	const lines = (draft.embed.description ?? '').split('\n').map(l => MENU_LINE.exec(fixEmoji(l.trim()))).filter(Boolean);
+	if (lines.length) draft.menu.items = lines.map(m => ({ roleId: m[2], emoji: m[1], label: '' }));
+}
+
 async function sendMessage(btn, sendAt = null) {
 	if (!draft.channelId) return toast('Pick a channel first.', 'warn');
+	readRowsFromDescription();
 	const items = (draft.menuOn ? draft.menu.items.filter(i => i.roleId) : []).map(i => ({ ...i, emoji: fixEmoji(i.emoji) }));
 	if (draft.menuOn && draft.menu.items.length && !items.length) return toast('Pick a role for each menu row (or close the Role menu section).', 'warn');
 	const editing = draft.editing;

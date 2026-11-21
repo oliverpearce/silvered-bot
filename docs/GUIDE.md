@@ -13,6 +13,11 @@
 | `/setup-roles` | Creates **Mod > Semi-Mod > Perms > Non-User** with suitable permissions. Safe to re-run | Admin |
 | `/role add` / `remove` / `info` | Gives, removes or describes a role | Manage Roles |
 | `/autorole set` / `off` / `show` | Gives every new member a role on join | Manage Roles |
+| `/roles-import` | Creates roles from a pasted list and posts a button menu per category | Manage Roles |
+| `/whois set` / `clear` / `lock` / `post` / `unpost` | Manages the self-updating who's who list | See `/help` |
+| `/aboutme` | Writes your own line on the who's who list | Everyone |
+| `/event create` / `list` / `cancel` / `timezone` | Posts an event and pings its role before it starts | See `/help` |
+| `/dashboard` | Gets the link to the web dashboard | Manage Roles |
 | `/help`, `/ping`, `/user`, `/avatar`, `/server`, `/botstats`, `/url-lookup`, `/echo`, `/pokeguess` | General commands | Everyone |
 
 Nobody can hand out a role at or above their own highest role. The bot's role must sit above every role it manages (Server Settings → Roles).
@@ -50,10 +55,12 @@ Menus made with `/reactionrole create` keep their role list up to date. Changes 
 ## Dashboard
 
 - **Send message:** build an embed with a live preview, post it, or paste a message link to edit one
+- **Scheduled:** view messages and events waiting to be posted
 - **Role menus:** create and edit reaction or button menus, grouped by category
 - **Roles:** create, edit and delete roles
 - **Members:** search members and manage their roles
-- **Settings:** configure autorole
+- **Who's who:** manage the server's who's who list
+- **Settings:** configure autorole and other server features
 
 Set the mode with `DASHBOARD` in `.env`:
 

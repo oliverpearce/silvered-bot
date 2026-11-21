@@ -41,23 +41,27 @@ function toast(msg, kind = 'ok', link) {
 	setTimeout(() => el.remove(), kind === 'bad' ? 9000 : 6000);
 }
 
-function modal({ title, text, confirm = 'OK', danger = false, checkbox }) {
+function modal({ title, text, confirm = 'OK', danger = false, checkbox, input }) {
 	return new Promise(resolve => {
 		const box = checkbox ? h('input', { type: 'checkbox', checked: Boolean(checkbox.checked) }) : null;
+		const field = input?.multiline
+			? h('textarea', { rows: 12, placeholder: input.placeholder ?? '', maxLength: input.max ?? 4000, style: { width: '100%' } })
+			: input ? h('input', { type: 'text', value: input.value ?? '', placeholder: input.placeholder ?? '', maxLength: input.max ?? 100, onkeydown: e => { if (e.key === 'Enter') close({ checked: box?.checked ?? false, value: field.value.trim() }); } }) : null;
 		const close = val => { overlay.remove(); resolve(val); };
 		const overlay = h('div', { class: 'overlay', onclick: e => { if (e.target === overlay) close(null); } },
 			h('div', { class: 'card modal', role: 'dialog', 'aria-modal': 'true' },
 				h('h2', {}, title),
 				text ? h('p', {}, text) : null,
+				field ? h('div', { style: { marginBottom: '12px' } }, field) : null,
 				checkbox ? h('label', { class: 'check' }, box, checkbox.label) : null,
 				h('div', { class: 'row' },
 					h('button', { class: 'ghost', onclick: () => close(null) }, 'Cancel'),
-					h('button', { class: danger ? 'danger' : 'primary', onclick: () => close({ checked: box?.checked ?? false }) }, confirm),
+					h('button', { class: danger ? 'danger' : 'primary', onclick: () => close({ checked: box?.checked ?? false, value: field?.value.trim() }) }, confirm),
 				),
 			),
 		);
 		document.body.append(overlay);
-		overlay.querySelector('button.danger, button.primary').focus();
+		(field ?? overlay.querySelector('button.danger, button.primary')).focus();
 		overlay.addEventListener('keydown', e => { if (e.key === 'Escape') close(null); });
 	});
 }
@@ -200,7 +204,7 @@ $('#nav').addEventListener('click', e => {
 
 function render() {
 	for (const b of document.querySelectorAll('#nav button')) b.classList.toggle('active', b.dataset.view === state.view);
-	const views = { send: viewSend, menus: viewMenus, roles: viewRoles, members: viewMembers, settings: viewSettings };
+	const views = { send: viewSend, scheduled: viewScheduled, menus: viewMenus, roles: viewRoles, members: viewMembers, whois: viewWhois, settings: viewSettings };
 	const el = (views[state.view] ?? viewSend)();
 	$('#view').replaceChildren(...[].concat(el).filter(Boolean));
 }
@@ -209,6 +213,40 @@ function permissionBanner() {
 	const me = state.guild.me;
 	if (me.manageRoles) return null;
 	return h('div', { class: 'banner' }, 'The bot doesn\'t have the Manage Roles permission in this server, so it can\'t give out or edit roles. Give its role Manage Roles (or Administrator) in Server Settings → Roles.');
+}
+
+// ---------- :shortcode: emoji ----------
+// Discord only converts :heart: when a person types it. Bots have to send the real emoji.
+const EMOJI_CODES = {
+	heart: '❤️', orange_heart: '🧡', yellow_heart: '💛', green_heart: '💚', blue_heart: '💙', purple_heart: '💜',
+	pink_heart: '🩷', light_blue_heart: '🩵', grey_heart: '🩶', white_heart: '🤍', black_heart: '🖤', brown_heart: '🤎',
+	heartpulse: '💗', heartbeat: '💓', sparkling_heart: '💖', two_hearts: '💕', revolving_hearts: '💞', cupid: '💘', gift_heart: '💝', broken_heart: '💔',
+	red_circle: '🔴', orange_circle: '🟠', yellow_circle: '🟡', green_circle: '🟢', blue_circle: '🔵', purple_circle: '🟣', black_circle: '⚫', white_circle: '⚪',
+	star: '⭐', star2: '🌟', sparkles: '✨', fire: '🔥', tada: '🎉', art: '🎨', bell: '🔔', calendar: '📆', date: '📅', video_game: '🎮', joystick: '🕹️', game_die: '🎲', space_invader: '👾',
+	trophy: '🏆', crossed_swords: '⚔️', shield: '🛡️', musical_note: '🎵', notes: '🎶', headphones: '🎧', movie_camera: '🎥', clapper: '🎬', camera: '📷', books: '📚', pencil: '📝', computer: '💻',
+	crescent_moon: '🌙', sunny: '☀️', cherry_blossom: '🌸', rainbow: '🌈', pizza: '🍕', coffee: '☕', cat: '🐱', dog: '🐶', wave: '👋', thumbsup: '👍', speech_balloon: '💬', loudspeaker: '📢', mega: '📣',
+	white_check_mark: '✅', x: '❌', warning: '⚠️', eyes: '👀', skull: '💀', crown: '👑', gem: '💎', ribbon: '🎀', butterfly: '🦋',
+};
+
+/** Swaps :heart: for ❤️ and :server_emoji: for that emoji. Anything it doesn't know is left alone. */
+function fixEmoji(text) {
+	if (typeof text !== 'string' || !text.includes(':')) return text;
+	return text.replace(/<a?:\w+:\d+>|:([a-z0-9_]+):/gi, (all, name) => {
+		if (!name) return all;
+		return state.guild?.emojis?.find(e => e.name === name)?.text ?? EMOJI_CODES[name.toLowerCase()] ?? all;
+	});
+}
+
+function fixEmbedEmoji(e) {
+	if (!e) return e;
+	return {
+		...e,
+		title: fixEmoji(e.title),
+		description: fixEmoji(e.description),
+		author: e.author && { ...e.author, name: fixEmoji(e.author.name) },
+		footer: e.footer && { ...e.footer, text: fixEmoji(e.footer.text) },
+		fields: (e.fields ?? []).map(x => ({ ...x, name: fixEmoji(x.name), value: fixEmoji(x.value) })),
+	};
 }
 
 // ---------- Discord-style markdown for the preview ----------
@@ -221,7 +259,7 @@ function markdown(text, { block = true } = {}) {
 	if (!text) return '';
 	const stash = [];
 	const keep = html => `\u0000${stash.push(html) - 1}\u0000`;
-	let s = escapeHtml(text);
+	let s = escapeHtml(fixEmoji(text));
 
 	s = s.replace(/```(?:[a-z0-9]+\n)?([\s\S]*?)```/gi, (_, code) => keep(`<div class="md-pre">${code}</div>`));
 	s = s.replace(/`([^`\n]+)`/g, (_, code) => keep(`<span class="md-code">${code}</span>`));
@@ -285,12 +323,107 @@ function emojiField(value, onchange) {
 }
 
 function emojiPreview(text) {
+	text = fixEmoji(text);
 	const m = /^<(a?):(\w+):(\d{17,20})>$/.exec(text ?? '');
 	if (m) return h('img', { src: `https://cdn.discordapp.com/emojis/${m[3]}.${m[1] ? 'gif' : 'webp'}?size=48`, alt: m[2] });
 	return text ? document.createTextNode(text) : null;
 }
 
 // ---------- view: send message ----------
+
+// ---------- paste a whole role menu ----------
+
+const PASTE_EXAMPLE = '# 🎮 pick ur games :3\nReact for the games you play.\n🔫 - valorant\n⛏️ - minecraft\n🌱 - indie games';
+
+/**
+ * Reads a pasted menu:  "# Title (pick one)", then "emoji - role name #hexcolour" lines.
+ * Any other line becomes the text above the list.
+ */
+function parseMenuPaste(text) {
+	const out = { title: '', unique: false, intro: [], rows: [] };
+	for (const raw of text.split('\n')) {
+		const line = fixEmoji(raw.trim());
+		if (!line) continue;
+		if (/^#\s/.test(line)) {
+			out.unique = /\(pick one\)\s*$/i.test(line);
+			out.title = line.replace(/^#\s*/, '').replace(/\(pick one\)\s*$/i, '').trim();
+			continue;
+		}
+		const m = /^(<a?:\w+:\d+>|\S+)\s+(?:[-–—:]\s*)?(.+?)(?:\s+(#[0-9a-f]{6}))?$/i.exec(line);
+		const isEmoji = m && (/^<a?:\w+:\d+>$/.test(m[1]) || /^(?:\p{Extended_Pictographic}|\p{Regional_Indicator}|[0-9#*]\uFE0F?\u20E3)/u.test(m[1]));
+		if (isEmoji) out.rows.push({ emoji: m[1], name: m[2].trim(), color: m[3] ?? null });
+		else out.intro.push(line);
+	}
+	return out;
+}
+
+async function pasteMenu() {
+	const res = await modal({
+		title: 'Paste a list',
+		text: 'One role per line, like "❤️ - Red". Add "# Title" on top, and "(pick one)" after it if people can only have one. Roles you already have are matched by name.',
+		confirm: 'Fill in',
+		input: { multiline: true, placeholder: PASTE_EXAMPLE },
+	});
+	if (!res?.value) return;
+	const parsed = parseMenuPaste(res.value);
+	if (!parsed.rows.length) return toast('No role lines found. Each one needs an emoji first, like "🔫 - valorant".', 'warn');
+
+	const problems = [];
+	const seen = new Set();
+	const rows = parsed.rows.filter(r => {
+		const key = r.emoji.replace(/\uFE0F/g, '');
+		if (seen.has(key)) { problems.push(`${r.name}: ${r.emoji} is already used`); return false; }
+		seen.add(key);
+		return true;
+	});
+	if (rows.length > 20) { problems.push(`Only the first 20 fit (Discord's reaction limit), so ${rows.length - 20} were left off`); rows.length = 20; }
+
+	const find = name => state.guild.roles.find(r => !r.everyone && r.name.toLowerCase() === name.toLowerCase());
+	const missing = rows.filter(r => !find(r.name));
+	if (missing.length) {
+		const ok = await modal({ title: `Create ${missing.length} new role${missing.length === 1 ? '' : 's'}?`, text: `These don't exist yet: ${missing.map(r => r.name).join(', ')}. They'll have no permissions.`, confirm: 'Create them' });
+		if (!ok) return;
+		for (const r of missing) {
+			try {
+				const out = await api(`/guilds/${state.guildId}/roles`, { method: 'POST', body: { name: r.name, color: r.color, permissions: [] } });
+				state.guild.roles.push(out.role);
+			} catch (e) {
+				if (e.message === 'Locked') return;
+				problems.push(`${r.name}: ${e.message}`);
+			}
+		}
+	}
+
+	const items = [];
+	for (const r of rows) {
+		const role = find(r.name);
+		if (!role) continue;
+		if (role.locked || role.managed) { problems.push(`${role.name}: the bot can't give this role (move it below the bot's role)`); continue; }
+		if (items.some(i => i.roleId === role.id)) { problems.push(`${role.name} is on the list twice`); continue; }
+		items.push({ roleId: role.id, emoji: r.emoji, label: '' });
+	}
+	if (!items.length) return toast(problems[0] ?? 'No usable roles.', 'bad');
+
+	const list = items.map(i => `${i.emoji} - <@&${i.roleId}>`).join('\n');
+	const title = parsed.title || draft.embed.title;
+	const lower = title.toLowerCase();
+	draft.embedOn = true;
+	draft.embed.title = title;
+	draft.embed.description = [parsed.intro.join('\n'), list].filter(Boolean).join('\n\n');
+	draft.menuOn = true;
+	draft.menu = {
+		...draft.menu,
+		mode: 'reactions',
+		unique: parsed.unique,
+		autoList: true,
+		category: lower.includes('colo') ? 'Colours' : lower.includes('game') ? 'Games' : lower.includes('event') ? 'Events' : draft.menu.category,
+		items,
+	};
+	store.set('draft', draft);
+	render();
+	toast(`Filled in ${items.length} roles. Pick a channel, check the preview, then send.`);
+	if (problems.length) toast(`Skipped: ${problems.slice(0, 5).join('; ')}`, 'warn');
+}
 
 const DEFAULT_DRAFT = () => ({
 	channelId: '',
@@ -303,6 +436,62 @@ const DEFAULT_DRAFT = () => ({
 	// Set when editing a message that's already posted: { messageId, channelId, url, own, hadMenu }
 	editing: null,
 });
+
+// Ready-made starting points for common messages. Pick one, then add your roles and tweak.
+const COLOUR_EMOJI = { red: '❤️', orange: '🧡', yellow: '💛', green: '💚', blue: '💙', purple: '💜', pink: '💗', gray: '🤍', grey: '🤍', white: '🤍', black: '🖤', brown: '🤎' };
+// Game and company tags, in menu order, each with its own emoji. Matched against your role names.
+const GAME_EMOJI = [
+	['valorant', '🔫'], ['minecraft', '⛏️'], ['league', '⚔️'], ['roblox', '🧱'], ['overwatch', '🦸'], ['fortnite', '🪂'], ['apex', '🦊'],
+	['counter', '💣'], ['terraria', '🌳'], ['stardew', '🌾'], ['osu', '⭕'], ['among us', '🚀'], ['indie', '🌱'],
+	['gacha', '🎰'], ['hoyo', '✨'], ['mihoyo', '🌠'], ['cygames', '🐎'], ['riot', '👊'], ['nintendo', '🍄'], ['steam', '♨️'],
+];
+const TEMPLATES = {
+	colours: {
+		label: '🎨 Colour roles',
+		embed: { title: '🎨 pick ur colour :3', description: 'React to pick the colour of your name. You can only have one, so picking a new one swaps it.', color: '#ff69b4' },
+		menu: { mode: 'reactions', unique: true, category: 'Colours' },
+		// Pre-fills roles named after a colour ("Red", "blue"…) with its heart, in rainbow order.
+		items: () => {
+			const roles = assignableRoles();
+			const used = new Set();
+			return Object.entries(COLOUR_EMOJI).flatMap(([word, emoji]) => {
+				const role = roles.find(r => r.name.trim().toLowerCase() === word);
+				if (!role || used.has(emoji)) return [];
+				used.add(emoji);
+				return [{ roleId: role.id, emoji, label: '' }];
+			});
+		},
+		// The list people read: "❤️ - Red"
+		describe: items => items.map(i => `${i.emoji} - ${roleById(i.roleId)?.name}`).join('\n'),
+	},
+	games: {
+		label: '🎮 Games',
+		embed: { title: '🎮 pick ur games :3', description: 'React for the games you play. Remove your reaction to drop the role.', color: '#5865f2' },
+		menu: { mode: 'reactions', unique: false, category: 'Games', autoList: true },
+		// Pre-fills roles that match a game or company. The bot keeps the list up to date after that.
+		items: () => {
+			const roles = assignableRoles();
+			const used = new Set();
+			return GAME_EMOJI.flatMap(([word, emoji]) => {
+				const role = roles.find(r => !used.has(r.id) && r.name.toLowerCase().includes(word));
+				if (!role) return [];
+				used.add(role.id);
+				return [{ roleId: role.id, emoji, label: '' }];
+			}).slice(0, 20);
+		},
+		describe: items => `React for the games you play. Remove your reaction to drop the role.\n\n${items.map(i => `${i.emoji} - <@&${i.roleId}>`).join('\n')}`,
+	},
+	events: {
+		label: '📅 Events',
+		embed: {
+			title: '📅 Event pings',
+			description: 'React to get pinged when these events happen. Remove your reaction to stop the pings.',
+			color: '#faa61a',
+			fields: [{ name: 'When', value: 'Times are posted in announcements before each event.', inline: false }],
+		},
+		menu: { mode: 'reactions', unique: false, category: 'Events' },
+	},
+};
 
 let draft = Object.assign(DEFAULT_DRAFT(), store.get('draft', {}));
 draft.menu.category ??= '';
@@ -409,10 +598,10 @@ function viewSend() {
 				? 'People react with the emoji to get the role, and remove their reaction to lose it. Up to 20 roles.'
 				: 'People click a button to get the role, and click again to remove it. Emoji are optional. Up to 25 roles.'),
 			...m.items.map((it, i) => h('div', { class: `menu-item ${reactions ? 'reactions' : ''}` },
-				roleSelect(it.roleId, { onchange: e => { it.roleId = e.target.value; update(); } }),
-				emojiField(it.emoji, v => { it.emoji = v; update(); }),
+				roleSelect(it.roleId, { onchange: e => { it.roleId = e.target.value; writeRowsToDescription(); update(); } }),
+				emojiField(it.emoji, v => { it.emoji = v; writeRowsToDescription(); update(); }),
 				reactions ? null : h('input', { type: 'text', placeholder: 'Button label (default: role name)', value: it.label ?? '', maxLength: 80, oninput: e => { it.label = e.target.value; update(); } }),
-				h('button', { type: 'button', class: 'danger small', onclick: () => { m.items.splice(i, 1); renderMenu(); update(); } }, '✕'),
+				h('button', { type: 'button', class: 'danger small', onclick: () => { m.items.splice(i, 1); writeRowsToDescription(); renderMenu(); update(); } }, '✕'),
 			)),
 			h('div', { class: 'row' },
 				m.items.length < limit ? h('button', { type: 'button', class: 'secondary small', onclick: () => { m.items.push({ roleId: '', emoji: '', label: '' }); renderMenu(); update(); } }, '+ Add role') : null,
@@ -450,7 +639,66 @@ function viewSend() {
 	const channelPicker = channelSelect(draft.channelId, e => { draft.channelId = e.target.value; saveDraft(); });
 	if (editing) channelPicker.disabled = true;
 
+	const useTemplate = async t => {
+		const dirty = draft.embed.title || draft.embed.description || draft.content || draft.menu.items.length;
+		if (dirty && !await modal({ title: `Start from "${t.label}"?`, text: 'This replaces what\'s in the form (the channel stays).', confirm: 'Use template' })) return;
+		const fresh = DEFAULT_DRAFT();
+		draft = {
+			...fresh,
+			channelId: draft.channelId,
+			editing: draft.editing, // keep editing the loaded message, if there is one
+			content: t.content ?? '',
+			embed: { ...fresh.embed, ...t.embed, author: { ...fresh.embed.author, ...t.embed.author }, footer: { ...fresh.embed.footer, ...t.embed.footer }, fields: (t.embed.fields ?? []).map(f => ({ ...f })) },
+			embedOn: Object.keys(t.embed ?? {}).length > 0,
+			menuOn: t.menuOn ?? true,
+			menu: { ...fresh.menu, ...t.menu, items: t.items ? t.items() : [] },
+		};
+		if (t.describe && draft.menu.items.length) draft.embed.description = t.describe(draft.menu.items);
+		store.set('draft', draft);
+		render();
+		toast(!draft.menuOn ? 'Template loaded.' : draft.menu.items.length ? `Loaded with ${draft.menu.items.length} roles. Check them, then send.` : 'Now add your roles under Role menu, then send.');
+	};
+
+	const saved = state.guild.templates ?? {};
+	const savedTemplate = (name, t) => ({
+		label: name,
+		embed: t.embed ?? {},
+		content: t.content ?? '',
+		menu: t.menu ? { mode: t.menu.mode, unique: t.menu.unique, category: t.menu.category } : {},
+		items: t.menu?.items?.length ? () => t.menu.items.filter(i => roleById(i.roleId)).map(i => ({ ...i })) : null,
+		menuOn: Boolean(t.menu?.items?.length),
+	});
+	const saveTemplate = async () => {
+		const res = await modal({ title: 'Save as a template', text: 'Saves the text, embed and role menu so you can reuse them. Same name = overwrite.', confirm: 'Save', input: { placeholder: 'Template name', max: 50, value: draft.embed.title.slice(0, 50) } });
+		if (!res?.value) return;
+		try {
+			const out = await api(`/guilds/${state.guildId}/templates`, { method: 'POST', body: { name: res.value, draft: { content: draft.content, embed: draft.embedOn ? draft.embed : null, menu: draft.menuOn ? draft.menu : null } } });
+			state.guild.templates = out.templates;
+			toast(`Saved "${res.value}".`);
+			render();
+		} catch (e) { toast(e.message, 'bad'); }
+	};
+	const deleteTemplate = async name => {
+		if (!await modal({ title: `Delete "${name}"?`, confirm: 'Delete', danger: true })) return;
+		try {
+			const out = await api(`/guilds/${state.guildId}/templates?name=${encodeURIComponent(name)}`, { method: 'DELETE' });
+			state.guild.templates = out.templates;
+			render();
+		} catch (e) { toast(e.message, 'bad'); }
+	};
+
 	const form = h('div', {},
+		editing ? null : h('div', { class: 'card' },
+			h('div', { class: 'label', style: { marginBottom: '8px' } }, 'Start from a template'),
+			h('div', { class: 'row' },
+				h('button', { type: 'button', class: 'primary small', onclick: pasteMenu }, '📋 Paste a list'),
+				Object.values(TEMPLATES).map(t => h('button', { type: 'button', class: 'secondary small', onclick: () => useTemplate(t) }, t.label)),
+				Object.entries(saved).map(([name, t]) => h('span', { class: 'chip' },
+					h('button', { type: 'button', style: { color: 'inherit' }, onclick: () => useTemplate(savedTemplate(name, t)) }, `⭐ ${name}`),
+					h('button', { type: 'button', title: `Delete ${name}`, 'aria-label': `Delete ${name}`, onclick: () => deleteTemplate(name) }, '✕'))),
+			),
+			h('div', { class: 'row', style: { marginTop: '8px' } }, h('button', { type: 'button', class: 'ghost small', onclick: saveTemplate }, '+ Save what\'s in the form as a template')),
+		),
 		editing
 			? h('div', { class: 'banner' },
 				'Editing ', h('a', { href: editing.url, target: '_blank', rel: 'noreferrer' }, 'this message'), '. Saving changes updates it in place.',
@@ -499,6 +747,18 @@ function viewSend() {
 			h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: draft.allowMentions, onchange: e => { draft.allowMentions = e.target.checked; saveDraft(); } }), 'Let mentions in the message text ping people (off = they show but don\'t notify)'),
 			h('div', { class: 'row', style: { marginTop: '14px' } },
 				sendBtn,
+				editing ? null : (() => {
+					const when = h('input', { type: 'datetime-local', style: { width: 'auto' }, 'aria-label': 'Send later at' });
+					const btn = h('button', {
+						class: 'secondary', title: 'Send it automatically at this time (your computer\'s timezone)',
+						onclick: () => {
+							const at = when.value ? new Date(when.value).getTime() : NaN;
+							if (!Number.isFinite(at)) return toast('Pick a date and time to send it later.', 'warn');
+							sendMessage(btn, at);
+						},
+					}, 'Schedule');
+					return h('span', { class: 'row', style: { gap: '6px' } }, h('span', { class: 'hint' }, 'or send later:'), when, btn);
+				})(),
 				h('button', { class: 'ghost', onclick: async () => { if (await modal({ title: 'Clear the form?', text: 'This empties every box.', confirm: 'Clear', danger: true })) { draft = DEFAULT_DRAFT(); store.set('draft', draft); render(); } } }, 'Clear form'),
 			),
 		),
@@ -549,18 +809,51 @@ function renderPreview() {
 	);
 }
 
-async function sendMessage(btn) {
+// Self-updating menus: the "emoji - @role" lines in the description and the menu rows stay the same.
+const MENU_LINE = /^(\S+) (?:- )?<@&(\d{17,20})>$/;
+
+/** Rows changed: rewrite the list in the description. */
+function writeRowsToDescription() {
+	if (!draft.menu.autoList || draft.menu.mode !== 'reactions') return;
+	const intro = (draft.embed.description ?? '').split('\n').filter(l => !MENU_LINE.test(l.trim())).join('\n').trim();
+	const list = draft.menu.items.filter(i => i.roleId && i.emoji).map(i => `${fixEmoji(i.emoji)} - <@&${i.roleId}>`).join('\n');
+	draft.embed.description = [intro, list].filter(Boolean).join('\n\n');
+	const box = document.querySelector('#desc-box');
+	if (box) { box.value = draft.embed.description; box.dispatchEvent(new Event('input')); }
+}
+
+/** Description edited by hand: the rows follow it, so the reactions give what the text says. */
+function readRowsFromDescription() {
+	if (!draft.menuOn || !draft.menu.autoList || draft.menu.mode !== 'reactions') return;
+	const lines = (draft.embed.description ?? '').split('\n').map(l => MENU_LINE.exec(fixEmoji(l.trim()))).filter(Boolean);
+	if (lines.length) draft.menu.items = lines.map(m => ({ roleId: m[2], emoji: m[1], label: '' }));
+}
+
+async function sendMessage(btn, sendAt = null) {
 	if (!draft.channelId) return toast('Pick a channel first.', 'warn');
-	const items = draft.menuOn ? draft.menu.items.filter(i => i.roleId) : [];
+	readRowsFromDescription();
+	const items = (draft.menuOn ? draft.menu.items.filter(i => i.roleId) : []).map(i => ({ ...i, emoji: fixEmoji(i.emoji) }));
 	if (draft.menuOn && draft.menu.items.length && !items.length) return toast('Pick a role for each menu row (or close the Role menu section).', 'warn');
 	const editing = draft.editing;
 	const body = {
 		channelId: editing?.channelId ?? draft.channelId,
-		content: draft.content,
-		embed: draft.embedOn ? draft.embed : null,
-		menu: items.length ? { mode: draft.menu.mode, unique: draft.menu.unique, category: draft.menu.category ?? '', items } : null,
+		content: fixEmoji(draft.content),
+		embed: draft.embedOn ? fixEmbedEmoji(draft.embed) : null,
+		menu: items.length ? { mode: draft.menu.mode, unique: draft.menu.unique, category: draft.menu.category ?? '', autoList: draft.menu.autoList === true, items } : null,
 		allowMentions: draft.allowMentions,
 	};
+	if (sendAt) {
+		btn.disabled = true;
+		try {
+			const res = await api(`/guilds/${state.guildId}/messages`, { method: 'POST', body: { ...body, sendAt } });
+			toast(`Scheduled for ${new Date(res.scheduled.at).toLocaleString()}. See it on the Scheduled page.`);
+		} catch (e) {
+			if (e.message !== 'Locked') toast(e.message, 'bad');
+		} finally {
+			btn.disabled = false;
+		}
+		return;
+	}
 	if (editing?.hadMenu && !items.length && !(await modal({ title: 'Save without a role menu?', text: 'This message\'s role menu will stop giving roles. People keep the roles they already have.', confirm: 'Save' }))) return;
 	const label = btn.textContent;
 	btn.disabled = true;
@@ -832,7 +1125,228 @@ function viewMembers() {
 	];
 }
 
+// ---------- view: scheduled (events + scheduled messages) ----------
+
+function viewScheduled() {
+	const listBox = h('div', { class: 'card', style: { padding: 0 } }, h('div', { class: 'empty' }, 'Loading…'));
+	const ev = { title: '', description: '', when: '', roleId: '', channelId: '', remind: 15 };
+
+	const load = async () => {
+		let jobs;
+		try { jobs = await api(`/guilds/${state.guildId}/scheduled`); } catch (e) { listBox.replaceChildren(h('div', { class: 'empty' }, e.message)); return; }
+		if (!jobs.length) return listBox.replaceChildren(h('div', { class: 'empty' }, 'Nothing scheduled. Make an event above, or use "Schedule" on the Send message page.'));
+		listBox.replaceChildren(h('table', {},
+			h('thead', {}, h('tr', {}, h('th', {}, 'What'), h('th', {}, 'Channel'), h('th', {}, 'Happens'), h('th', {}, ''))),
+			h('tbody', {}, jobs.map(j => h('tr', {},
+				h('td', {}, h('div', { style: { fontWeight: 600 } }, j.kind === 'event' ? `📅 ${j.title}` : `✉ ${j.title}`),
+					h('div', { class: 'hint' }, j.kind === 'event' ? `Event at ${new Date(j.eventAt).toLocaleString()}${j.roleId ? ` · pings @${roleById(j.roleId)?.name ?? 'deleted role'}` : ''}` : 'Scheduled message')),
+				h('td', {}, `#${channelById(j.channelId)?.name ?? 'deleted'}`),
+				h('td', {}, new Date(j.at).toLocaleString(), h('div', { class: 'hint' }, j.kind === 'event' ? 'reminder ping' : 'sends')),
+				h('td', {}, h('div', { class: 'row', style: { justifyContent: 'flex-end', flexWrap: 'nowrap' } },
+					j.messageId ? h('a', { href: `https://discord.com/channels/${state.guildId}/${j.channelId}/${j.messageId}`, target: '_blank', rel: 'noreferrer' }, 'Open') : null,
+					h('button', {
+						class: 'danger small',
+						onclick: async () => {
+							const text = j.kind === 'event' ? 'The reminder is dropped and the event post is marked as cancelled.' : 'It won\'t be sent.';
+							if (!await modal({ title: j.kind === 'event' ? 'Cancel this event?' : 'Cancel this message?', text, confirm: 'Cancel it', danger: true })) return;
+							try { await api(`/guilds/${state.guildId}/scheduled/${j.id}`, { method: 'DELETE' }); toast('Cancelled.'); load(); } catch (e) { toast(e.message, 'bad'); }
+						},
+					}, 'Cancel'),
+				)),
+			))),
+		));
+	};
+
+	const createBtn = h('button', {
+		class: 'primary',
+		onclick: async () => {
+			const at = ev.when ? new Date(ev.when).getTime() : NaN;
+			if (!ev.title.trim()) return toast('Give the event a title.', 'warn');
+			if (!Number.isFinite(at)) return toast('Pick when it starts.', 'warn');
+			if (!ev.channelId) return toast('Pick a channel.', 'warn');
+			createBtn.disabled = true;
+			try {
+				const res = await api(`/guilds/${state.guildId}/events`, { method: 'POST', body: { title: ev.title, description: ev.description, at, roleId: ev.roleId || null, channelId: ev.channelId, remindMinutes: Number(ev.remind) || 0 } });
+				toast('Event posted!', 'ok', { href: res.url, text: 'Open in Discord' });
+				if (res.warning) toast(res.warning, 'warn');
+				load();
+			} catch (e) { toast(e.message, 'bad'); } finally { createBtn.disabled = false; }
+		},
+	}, 'Post event');
+
+	const desc = h('textarea', { rows: 3, maxLength: 4000, placeholder: 'What, where, what to bring… (optional)', oninput: e => { ev.description = e.target.value; } });
+	load();
+	return [
+		h('h1', {}, 'Scheduled'),
+		h('p', { class: 'lead' }, 'Events and messages waiting to go out. Times show in your computer\'s timezone, and in Discord everyone sees event times in their own.'),
+		h('div', { class: 'card' },
+			h('h2', {}, 'New event'),
+			h('p', { class: 'hint' }, 'Posts the event now. People react 🔔 to get the role, and the role gets pinged before it starts. Same as /event create.'),
+			h('div', { class: 'grid2' },
+				h('label', { class: 'field' }, h('span', { class: 'label' }, 'Title'), h('input', { type: 'text', maxLength: 200, placeholder: 'Movie Night', oninput: e => { ev.title = e.target.value; } })),
+				h('label', { class: 'field' }, h('span', { class: 'label' }, 'Starts'), h('input', { type: 'datetime-local', oninput: e => { ev.when = e.target.value; } })),
+				h('label', { class: 'field' }, h('span', { class: 'label' }, 'Role to ping (optional)'), roleSelect('', { placeholder: 'No ping', roles: state.guild.roles.filter(r => !r.everyone && !r.managed), onchange: e => { ev.roleId = e.target.value; } })),
+				h('label', { class: 'field' }, h('span', { class: 'label' }, 'Ping how many minutes before'), h('input', { type: 'number', min: 0, max: 10080, value: 15, oninput: e => { ev.remind = e.target.value; } })),
+			),
+			h('label', { class: 'field' }, h('span', { class: 'label' }, 'Details'), desc),
+			h('div', { class: 'row' }, h('div', { class: 'grow' }, channelSelect('', e => { ev.channelId = e.target.value; })), createBtn),
+		),
+		h('h3', {}, 'Coming up'),
+		listBox,
+	];
+}
+
+// ---------- view: who's who ----------
+
+function viewWhois() {
+	const list = h('div', { class: 'card', style: { padding: 0 } }, h('div', { class: 'empty' }, 'Loading…'));
+	const postBox = h('div', { class: 'card' });
+	let members = [];
+	let posted = null;
+	let maxNote = 100;
+	let channelId = '';
+	let filter = '';
+
+	const renderPost = () => {
+		const btn = h('button', {
+			class: 'primary',
+			onclick: async () => {
+				const target = channelId || posted?.channelId;
+				if (!target) return toast('Pick a channel first.', 'warn');
+				btn.disabled = true;
+				try {
+					const res = await api(`/guilds/${state.guildId}/whois/post`, { method: 'POST', body: { channelId: target } });
+					posted = res.posted;
+					toast('Posted.', 'ok', { href: res.url, text: 'Open in Discord' });
+					renderPost();
+				} catch (e) { toast(e.message, 'bad'); btn.disabled = false; }
+			},
+		}, posted ? 'Repost' : 'Post to Discord');
+		postBox.replaceChildren(
+			h('h2', {}, 'Posted list'),
+			posted
+				? h('p', {}, 'Posted in ', h('a', { href: posted.url, target: '_blank', rel: 'noreferrer' }, `#${channelById(posted.channelId)?.name ?? 'channel'}`),
+					'. It updates itself a few seconds after you change a note, or when people join, leave or change roles.')
+				: h('p', { class: 'hint' }, 'Not posted yet. Pick a channel and post it. After that it keeps itself up to date.'),
+			h('div', { class: 'row' },
+				h('div', { class: 'grow' }, channelSelect(channelId || posted?.channelId || '', e => { channelId = e.target.value; })),
+				btn,
+				posted ? h('button', {
+					class: 'danger',
+					onclick: async () => {
+						if (!await modal({ title: 'Delete the posted list?', text: 'Notes are kept, so you can post it again later.', confirm: 'Delete', danger: true })) return;
+						try { await api(`/guilds/${state.guildId}/whois/post`, { method: 'DELETE' }); posted = null; toast('Deleted.'); renderPost(); } catch (e) { toast(e.message, 'bad'); }
+					},
+				}, 'Delete') : null,
+			),
+		);
+	};
+
+	const row = m => {
+		const status = h('span', { class: 'hint' });
+		const input = h('input', {
+			type: 'text', maxLength: maxNote, value: m.note ?? '', placeholder: 'Add a note, e.g. "owner, makes the bot"',
+			onkeydown: e => { if (e.key === 'Enter') e.target.blur(); },
+			onchange: async e => {
+				status.textContent = 'Saving…';
+				try {
+					const res = await api(`/guilds/${state.guildId}/whois/${m.id}`, { method: 'PUT', body: { note: e.target.value } });
+					m.note = res.note;
+					e.target.value = res.note ?? '';
+					status.textContent = 'Saved';
+					setTimeout(() => { status.textContent = ''; }, 2000);
+				} catch (err) { status.textContent = ''; toast(err.message, 'bad'); }
+			},
+		});
+		const lock = h('label', { class: 'check', title: 'Locked notes can\'t be changed by the person with /aboutme' },
+			h('input', {
+				type: 'checkbox', checked: m.locked,
+				onchange: async e => {
+					try {
+						const res = await api(`/guilds/${state.guildId}/whois/${m.id}`, { method: 'PUT', body: { locked: e.target.checked } });
+						m.locked = res.locked;
+						toast(m.locked ? `Locked ${m.displayName}'s note.` : `${m.displayName} can change their note again.`);
+					} catch (err) { e.target.checked = m.locked; toast(err.message, 'bad'); }
+				},
+			}), '🔒 Lock');
+		return h('div', { class: 'member' },
+			h('img', { src: m.avatar, alt: '' }),
+			h('div', {},
+				h('div', { class: 'who' }, m.displayName, h('small', {}, `@${m.username}`), ' ', status),
+				h('div', { class: 'row', style: { marginTop: '6px', flexWrap: 'nowrap' } }, h('div', { class: 'grow' }, input), lock),
+			),
+		);
+	};
+
+	const renderList = () => {
+		const q = filter.toLowerCase();
+		const shown = members.filter(m => !q || m.displayName.toLowerCase().includes(q) || m.username.toLowerCase().includes(q) || (m.note ?? '').toLowerCase().includes(q));
+		if (!shown.length) return list.replaceChildren(h('div', { class: 'empty' }, members.length ? 'Nobody matches.' : 'No members found.'));
+		const out = [];
+		let group = null;
+		for (const m of shown) {
+			if (m.group !== group) {
+				group = m.group;
+				out.push(h('div', { class: 'label', style: { padding: '12px 12px 4px' } }, group));
+			}
+			out.push(row(m));
+		}
+		list.replaceChildren(...out);
+	};
+
+	(async () => {
+		try {
+			const res = await api(`/guilds/${state.guildId}/whois`);
+			members = res.members;
+			posted = res.posted;
+			maxNote = res.maxNote;
+			renderPost();
+			renderList();
+		} catch (e) { list.replaceChildren(h('div', { class: 'empty' }, e.message)); }
+	})();
+	renderPost();
+
+	return [
+		h('h1', {}, 'Who\'s who'),
+		h('p', { class: 'lead' }, 'A list of everyone in the server, grouped by their role (the roles shown separately in the member list), with a note about each person. Names in the posted list are clickable and open their profile. Notes save when you press Enter or click away. Members can write their own with /aboutme unless you lock it.'),
+		postBox,
+		h('div', { class: 'card', style: { marginBottom: '16px' } }, h('input', { type: 'search', placeholder: 'Filter by name or note…', oninput: e => { filter = e.target.value.trim(); renderList(); } })),
+		list,
+	];
+}
+
 // ---------- view: settings ----------
+
+function welcomeCard(which, title, about) {
+	const g = state.guild;
+	const cfg = { ...g.welcome[which] };
+	const text = h('textarea', { rows: 3, maxLength: 2000, oninput: e => { cfg.text = e.target.value; } });
+	text.value = cfg.text;
+	const save = async () => {
+		try {
+			const res = await api(`/guilds/${state.guildId}/welcome/${which}`, { method: 'PUT', body: cfg });
+			g.welcome = res.welcome;
+			toast(cfg.channelId ? `${title} saved.` : `${title} turned off.`);
+			return true;
+		} catch (e) { toast(e.message, 'bad'); return false; }
+	};
+	return h('div', { class: 'card' },
+		h('h2', {}, title),
+		h('p', { class: 'hint' }, `${about} Placeholders: {user} (mention), {name}, {username}, {server}, {count}. Pick no channel to turn it off.`),
+		h('div', { class: 'row' },
+			h('div', { class: 'grow' }, channelSelect(cfg.channelId ?? '', e => { cfg.channelId = e.target.value || null; })),
+			h('label', { class: 'field', style: { margin: 0 } }, h('input', { type: 'color', value: cfg.color, title: 'Embed colour', oninput: e => { cfg.color = e.target.value; } })),
+		),
+		h('div', { style: { margin: '10px 0' } }, text),
+		h('div', { class: 'row' },
+			h('button', { class: 'primary', onclick: save }, 'Save'),
+			h('button', { class: 'ghost', title: 'Sends it once with the bot as the example member', onclick: async () => {
+				if (!await save()) return;
+				try { await api(`/guilds/${state.guildId}/welcome/${which}/test`, { method: 'POST' }); toast('Test sent. Check the channel.'); } catch (e) { toast(e.message, 'bad'); }
+			} }, 'Save + send test'),
+		),
+	);
+}
 
 function viewSettings() {
 	let choice = state.guild.autorole ?? '';
@@ -856,6 +1370,41 @@ function viewSettings() {
 			h('p', { class: 'hint' }, 'Every new member gets this role when they join. Bots are skipped.'),
 			h('div', { class: 'row' }, h('div', { class: 'grow' }, roleSelect(choice, { placeholder: 'Off', onchange: e => { choice = e.target.value; } })), save),
 		),
+		welcomeCard('join', 'Welcome message', 'Posted when someone joins (they get pinged).'),
+		welcomeCard('leave', 'Goodbye message', 'Posted when someone leaves.'),
+		(() => {
+			let ch = g.modlog ?? '';
+			return h('div', { class: 'card' },
+				h('h2', {}, 'Mod log'),
+				h('p', { class: 'hint' }, 'Logs joins (flags brand-new accounts), leaves, bans, deleted and edited messages, nickname and role changes. Make it a private staff channel.'),
+				h('div', { class: 'row' },
+					h('div', { class: 'grow' }, channelSelect(ch, e => { ch = e.target.value; })),
+					h('button', { class: 'primary', onclick: async () => {
+						try { const res = await api(`/guilds/${state.guildId}/modlog`, { method: 'PUT', body: { channelId: ch || null } }); g.modlog = res.modlog; toast(res.modlog ? `Mod log on in #${channelById(res.modlog)?.name}.` : 'Mod log off.'); } catch (e) { toast(e.message, 'bad'); }
+					} }, 'Save'),
+					g.modlog ? h('button', { class: 'ghost', onclick: async () => {
+						try { await api(`/guilds/${state.guildId}/modlog`, { method: 'PUT', body: { channelId: null } }); g.modlog = null; toast('Mod log off.'); render(); } catch (e) { toast(e.message, 'bad'); }
+					} }, 'Turn off') : null,
+				),
+			);
+		})(),
+		(() => {
+			const mine = Intl.DateTimeFormat().resolvedOptions().timeZone;
+			const zones = typeof Intl.supportedValuesOf === 'function' ? Intl.supportedValuesOf('timeZone') : [mine, 'UTC'];
+			let tz = g.timezone;
+			const pick = h('select', { onchange: e => { tz = e.target.value; } }, [...new Set(['UTC', ...zones])].map(z => h('option', { value: z, selected: z === tz }, z)));
+			return h('div', { class: 'card' },
+				h('h2', {}, 'Timezone'),
+				h('p', { class: 'hint' }, `Used for times you type in /event (e.g. "8pm"). Your computer is on ${mine}. Event posts show in each person's own timezone either way.`),
+				h('div', { class: 'row' },
+					h('div', { class: 'grow' }, pick),
+					tz !== mine ? h('button', { class: 'ghost', onclick: () => { tz = mine; pick.value = mine; } }, `Use ${mine}`) : null,
+					h('button', { class: 'primary', onclick: async () => {
+						try { const res = await api(`/guilds/${state.guildId}/timezone`, { method: 'PUT', body: { timezone: tz } }); g.timezone = res.timezone; toast(`Timezone set to ${res.timezone}.`); } catch (e) { toast(e.message, 'bad'); }
+					} }, 'Save'),
+				),
+			);
+		})(),
 		h('div', { class: 'card' },
 			h('h2', {}, 'Bot status'),
 			h('table', {}, h('tbody', {},

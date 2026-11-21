@@ -1,5 +1,5 @@
 # Pings the bot's status page twice a day, like a cron job.
-# Set the BOT_URL repository secret to your Google Cloud address, e.g. http://123.45.67.89:3000
+# Set the BOT_URL repository secret to your dashboard address, e.g. https://bot.example.com
 # (Settings → Secrets and variables → Actions → New repository secret).
 # If the bot is down the run fails and GitHub emails you.
 name: Keep alive

@@ -28,12 +28,15 @@ silvered-bot/
 │  ├─ config.js             environment settings
 │  ├─ commands/
 │  │  ├─ fun/               echo, pokeguess
-│  │  ├─ roles/             autorole, reactionrole, role, rolemenu, setup-roles
-│  │  └─ utility/           avatar, botstats, embed, help, ping, server, url-lookup, user
+│  │  ├─ roles/             autorole, reactionrole, role, rolemenu, roles-import, setup-roles
+│  │  └─ utility/           aboutme, avatar, botstats, dashboard, embed, event, help, ping,
+│  │                         server, url-lookup, user, whois
 │  ├─ dashboard/
+│  │  ├─ auth.js            Discord login
 │  │  ├─ server.js          dashboard API
 │  │  └─ public/            dashboard web app
-│  └─ lib/                  embeds, message links, role menus, role utils, storage
+│  └─ lib/                  embeds, events, message links, mod log, role menus, role utils,
+│                           scheduler, storage, welcome, who's who
 ├─ scripts/
 │  └─ deploy-commands.js    manual slash command registration
 ├─ docs/

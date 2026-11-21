@@ -12,8 +12,8 @@ const EPHEMERAL = MessageFlags.Ephemeral;
 const MAX_ITEMS = 20; // Discord allows 20 different reactions per message
 const DEFAULT_COLOR = 0xff69b4;
 const PICK_ONE_FOOTER = 'You can only pick one role from this menu.';
-// Role lines the bot writes into menus made with /reactionrole create, e.g. "🎮 <@&123>"
-const ROLE_LINE = /^\S+ <@&\d{17,20}>$/;
+// Role lines the bot writes into self-updating menus, e.g. "🎮 - <@&123>" (older menus: "🎮 <@&123>")
+const ROLE_LINE = /^\S+ (?:- )?<@&\d{17,20}>$/;
 
 const messageOption = o => o.setName('message').setDescription('Link to the menu message (right-click → Copy Message Link), or its ID').setRequired(true);
 const categoryOption = o => o.setName('category').setDescription('Group for this menu, e.g. Games, Events, Interests').setMaxLength(50).setAutocomplete(true);
@@ -72,10 +72,11 @@ async function syncList(message, menu) {
 	if (!menu.autoList || message.author.id !== message.client.user.id || !message.embeds[0]) return;
 	const embed = EmbedBuilder.from(message.embeds[0]);
 	const intro = (embed.data.description ?? '').split('\n').filter(line => !ROLE_LINE.test(line.trim())).join('\n').trim();
-	const lines = menu.items.map(i => `${i.emoji} <@&${i.roleId}>`);
+	const lines = menu.items.map(i => `${i.emoji} - <@&${i.roleId}>`);
 	const description = [intro, lines.join('\n')].filter(Boolean).join('\n\n') || 'No roles yet.';
 	embed.setDescription(description.slice(0, 4096));
-	embed.setFooter(menu.unique ? { text: PICK_ONE_FOOTER } : null);
+	if (menu.unique) embed.setFooter({ text: PICK_ONE_FOOTER });
+	else if (embed.data.footer?.text === PICK_ONE_FOOTER) embed.setFooter(null);
 	await message.edit({ embeds: [embed] }).catch(e => console.warn('[reactionrole] couldn\'t update the menu text:', e.message));
 }
 
@@ -250,6 +251,7 @@ async function del(interaction) {
 
 module.exports = {
 	data,
+	syncList,
 	async execute(interaction) {
 		const handlers = { create, add, remove, edit, list, delete: del };
 		return handlers[interaction.options.getSubcommand()](interaction);

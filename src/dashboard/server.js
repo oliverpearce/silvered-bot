@@ -14,8 +14,14 @@ const crypto = require('node:crypto');
 const { ChannelType, PermissionFlagsBits, PermissionsBitField } = require('discord.js');
 const { botCantManage } = require('../lib/roleUtils');
 const { buildRows, makeButton } = require('../commands/roles/rolemenu');
+const { syncList } = require('../commands/roles/reactionrole');
 const roleMenus = require('../lib/roleMenus');
 const storage = require('../lib/storage');
+const whois = require('../lib/whois');
+const welcome = require('../lib/welcome');
+const modlog = require('../lib/modlog');
+const events = require('../lib/events');
+const scheduler = require('../lib/scheduler');
 const { EmbedError, str, parseColor, hex, buildEmbed, embedToDraft } = require('../lib/embeds');
 const { canManageGuild, manageableGuilds } = require('./auth');
 
@@ -195,7 +201,7 @@ function readMenu(guild, channel, raw) {
 			throw new HttpError(400, `I need Add Reactions and Read Message History in #${channel.name}.`);
 		}
 	}
-	return { mode: raw.mode, unique: Boolean(raw.unique), category: str(raw.category, 50), items };
+	return { mode: raw.mode, unique: Boolean(raw.unique), category: str(raw.category, 50), autoList: raw.mode === 'reactions' && raw.autoList === true, items };
 }
 
 function buttonRows(menu) {
@@ -246,10 +252,13 @@ async function attachMenu(guild, message, menu, previous) {
 			category: menu.category || undefined,
 			title: roleMenus.titleOf(message),
 			items: saved,
-			autoList: previous?.autoList || undefined,
+			autoList: previous?.autoList || menu.autoList || undefined,
 			createdAt: previous?.createdAt ?? new Date().toISOString(),
 			updatedAt: previous ? new Date().toISOString() : undefined,
 		});
+		// New self-updating menus: tidy the list and add the pick-one footer.
+		// Not on edits: the dashboard form already holds the final text, and this message object is the pre-edit copy.
+		if (!previous && message.author) await syncList(message, roleMenus.get(guild.id, message.id));
 	} else if (previous) {
 		roleMenus.remove(guild.id, message.id);
 	}
@@ -264,6 +273,28 @@ function allowedPermissions(guild, names) {
 	const allowed = valid.filter(n => me.permissions.has(PermissionFlagsBits[n]));
 	return { bits: new PermissionsBitField(allowed.map(n => PermissionFlagsBits[n])), skipped: valid.filter(n => !allowed.includes(n)) };
 }
+
+// Sends a message from the dashboard form's shape. Used for "send now" and for scheduled messages.
+async function sendFromBody(guild, body) {
+	const channel = textChannel(guild, body.channelId);
+	const { content, embed } = readContent(body);
+	const menu = readMenu(guild, channel, body.menu);
+	const payload = { content: content || undefined, embeds: embed ? [embed] : [], allowedMentions: { parse: body.allowMentions ? ['users', 'roles'] : [] } };
+	if (menu?.mode === 'buttons') payload.components = buttonRows(menu);
+	let message;
+	try {
+		message = await channel.send(payload);
+	} catch (e) {
+		throw new HttpError(400, `Discord refused the message: ${e.message}`);
+	}
+	const warning = menu ? await attachMenu(guild, message, menu, null) : null;
+	return { message, warning };
+}
+
+scheduler.register('message', async (guild, job) => {
+	const { warning } = await sendFromBody(guild, job.body);
+	if (warning) console.warn(`[scheduler] scheduled message in ${guild.name}: ${warning}`);
+});
 
 // ---------- API ----------
 
@@ -315,31 +346,124 @@ async function api(client, req, res, url, viewer = null) {
 			memberCount: guild.memberCount,
 			channels,
 			roles,
-			emojis: guild.emojis.cache.map(e => ({ id: e.id, name: e.name, animated: e.animated, url: e.imageURL({ size: 48 }), text: e.toString() })),
+			emojis: guild.emojis.cache.map(e => ({ id: e.id, name: e.name, animated: e.animated, url: e.imageURL({ size: 64 }), text: e.toString() })),
 			me: { highestRole: me.roles.highest.name, permissions: me.permissions.toArray(), manageRoles: me.permissions.has(PermissionFlagsBits.ManageRoles) },
 			autorole: storage.get(guild.id, 'autorole') ?? null,
 			menuCategories: roleMenus.categories(guild.id),
+			welcome: welcome.get(guild.id),
+			modlog: modlog.channelId(guild.id),
+			timezone: events.timezone(guild.id),
+			templates: storage.get(guild.id, 'templates') ?? {},
 		};
 	}
 
-	// POST /api/guilds/:gid/messages: send a message/embed, optionally as a role menu
+	// POST /api/guilds/:gid/messages: send a message/embed, optionally as a role menu.
+	// With sendAt (a timestamp in ms), it's checked now and sent later instead.
 	if (section === 'messages' && !id && method === 'POST') {
 		const body = await readJson(req);
-		const channel = textChannel(guild, body.channelId);
-		const { content, embed } = readContent(body);
-		const menu = readMenu(guild, channel, body.menu);
-
-		const payload = { content: content || undefined, embeds: embed ? [embed] : [], allowedMentions: { parse: body.allowMentions ? ['users', 'roles'] : [] } };
-		if (menu?.mode === 'buttons') payload.components = buttonRows(menu);
-
-		let message;
-		try {
-			message = await channel.send(payload);
-		} catch (e) {
-			throw new HttpError(400, `Discord refused the message: ${e.message}`);
+		if (body.sendAt !== undefined && body.sendAt !== null) {
+			const at = Number(body.sendAt);
+			if (!Number.isFinite(at) || at < Date.now() + 30000) throw new HttpError(400, 'Pick a time at least a minute from now.');
+			if (at > Date.now() + 366 * 864e5) throw new HttpError(400, 'Pick a time within the next year.');
+			const channel = textChannel(guild, body.channelId);
+			readContent(body);
+			readMenu(guild, channel, body.menu);
+			const { sendAt, editing, ...rest } = body;
+			const job = scheduler.add(guild.id, { kind: 'message', at, channelId: channel.id, body: rest });
+			return { ok: true, scheduled: { id: job.id, at } };
 		}
-		const warning = menu ? await attachMenu(guild, message, menu, null) : null;
+		const { message, warning } = await sendFromBody(guild, body);
 		return { ok: true, messageId: message.id, url: message.url, warning: warning ?? undefined };
+	}
+
+	// Scheduled messages and event reminders
+	if (section === 'scheduled') {
+		if (!id && method === 'GET') {
+			return scheduler.list(guild.id).map(j => ({
+				id: j.id, kind: j.kind, at: j.at, channelId: j.channelId,
+				title: j.kind === 'event' ? j.title : (j.body?.embed?.title || j.body?.content || '(embed)').slice(0, 100),
+				eventAt: j.eventAt, roleId: j.roleId, messageId: j.messageId,
+			}));
+		}
+		if (/^[0-9a-f]{8}$/.test(id ?? '') && method === 'DELETE') {
+			const job = scheduler.list(guild.id).find(j => j.id === id);
+			if (!job) throw new HttpError(404, 'That\'s already gone (it may have just run).');
+			if (job.kind === 'event') await events.cancel(guild, id);
+			else scheduler.remove(guild.id, id);
+			return { ok: true };
+		}
+	}
+
+	// POST /api/guilds/:gid/events: post an event and schedule its reminder ping
+	if (section === 'events' && !id && method === 'POST') {
+		const body = await readJson(req);
+		const channel = textChannel(guild, body.channelId);
+		try {
+			const { message, job, warnings } = await events.create(guild, channel, {
+				title: str(body.title, 200), description: str(body.description, 4000), at: Number(body.at),
+				roleId: isSnowflake(body.roleId) ? body.roleId : null, remindMinutes: body.remindMinutes,
+			});
+			return { ok: true, url: message.url, id: job.id, warning: warnings.join(' ') || undefined };
+		} catch (e) {
+			throw new HttpError(400, e.message);
+		}
+	}
+
+	// Welcome / goodbye messages
+	if (section === 'welcome' && (id === 'join' || id === 'leave')) {
+		if (!sub && method === 'PUT') {
+			const body = await readJson(req);
+			const channelId = body.channelId ? textChannel(guild, body.channelId).id : null;
+			const color = /^#[0-9a-f]{6}$/i.test(body.color ?? '') ? body.color : welcome.DEFAULTS[id].color;
+			welcome.set(guild.id, id, { channelId, text: str(body.text, 2000) || welcome.DEFAULTS[id].text, color });
+			return { ok: true, welcome: welcome.get(guild.id) };
+		}
+		if (sub === 'test' && method === 'POST') {
+			const sent = await welcome.send(me, id, { test: true }).catch(e => { throw new HttpError(400, e.message); });
+			if (!sent) throw new HttpError(400, 'Pick a channel and save first.');
+			return { ok: true };
+		}
+	}
+
+	// Mod log channel
+	if (section === 'modlog' && !id && method === 'PUT') {
+		const body = await readJson(req);
+		const channelId = body.channelId ? textChannel(guild, body.channelId).id : null;
+		modlog.setChannel(guild.id, channelId);
+		return { ok: true, modlog: channelId };
+	}
+
+	// Timezone for times typed in /event
+	if (section === 'timezone' && !id && method === 'PUT') {
+		const body = await readJson(req);
+		if (!events.setTimezone(guild.id, str(body.timezone, 60))) throw new HttpError(400, 'That isn\'t a timezone I know.');
+		return { ok: true, timezone: events.timezone(guild.id) };
+	}
+
+	// Saved embed templates
+	if (section === 'templates') {
+		const all = storage.get(guild.id, 'templates') ?? {};
+		const name = str(url.searchParams.get('name') ?? '', 50);
+		if (!id && method === 'POST') {
+			const body = await readJson(req);
+			const tname = str(body.name, 50);
+			if (!tname) throw new HttpError(400, 'Give the template a name.');
+			if (!all[tname] && Object.keys(all).length >= 50) throw new HttpError(400, 'You can save up to 50 templates. Delete some first.');
+			const d = body.draft ?? {};
+			all[tname] = {
+				content: str(d.content, 2000),
+				embed: d.embed && typeof d.embed === 'object' ? d.embed : null,
+				menu: d.menu && typeof d.menu === 'object' ? { mode: d.menu.mode === 'buttons' ? 'buttons' : 'reactions', unique: Boolean(d.menu.unique), category: str(d.menu.category, 50), items: Array.isArray(d.menu.items) ? d.menu.items.slice(0, 25) : [] } : null,
+			};
+			if (JSON.stringify(all[tname]).length > 20000) throw new HttpError(400, 'That template is too big to save.');
+			storage.set(guild.id, 'templates', all);
+			return { ok: true, templates: all };
+		}
+		if (!id && method === 'DELETE' && name) {
+			delete all[name];
+			storage.set(guild.id, 'templates', Object.keys(all).length ? all : null);
+			return { ok: true, templates: all };
+		}
 	}
 
 	// GET /api/guilds/:gid/messages/:mid?channelId=: load a message (and its role menu) into the editor
@@ -362,6 +486,7 @@ async function api(client, req, res, url, viewer = null) {
 				mode: saved.mode,
 				unique: Boolean(saved.unique),
 				category: saved.category ?? '',
+				autoList: Boolean(saved.autoList),
 				items: saved.items.map(i => ({ roleId: i.roleId, emoji: i.emoji ?? '', label: i.label ?? '' })),
 			} : null,
 		};
@@ -499,6 +624,35 @@ async function api(client, req, res, url, viewer = null) {
 			if (method === 'PUT') await member.roles.add(role, 'Dashboard').catch(e => { throw new HttpError(400, e.message); });
 			else await member.roles.remove(role, 'Dashboard').catch(e => { throw new HttpError(400, e.message); });
 			return { ok: true, member: serializeMember(member) };
+		}
+	}
+
+	// Who's who: list members with notes, edit notes, post/unpost the list
+	if (section === 'whois') {
+		if (!id && method === 'GET') {
+			return { posted: whois.postedInfo(guild), members: await whois.list(guild), maxNote: whois.MAX_NOTE };
+		}
+		if (id === 'post' && method === 'POST') {
+			const body = await readJson(req);
+			const channel = textChannel(guild, body.channelId);
+			try {
+				const { url } = await whois.post(guild, channel);
+				return { ok: true, posted: whois.postedInfo(guild), url };
+			} catch (e) {
+				throw new HttpError(400, `Couldn't post it: ${e.message}`);
+			}
+		}
+		if (id === 'post' && method === 'DELETE') {
+			await whois.unpost(guild);
+			return { ok: true, posted: null };
+		}
+		if (isSnowflake(id) && !sub && method === 'PUT') {
+			const body = await readJson(req);
+			const member = await guild.members.fetch(id).catch(() => null);
+			if (!member || member.user.bot) throw new HttpError(404, "That person isn't in the server.");
+			if ('locked' in body) whois.setLocked(guild.id, id, Boolean(body.locked));
+			const note = 'note' in body ? whois.setNote(guild, id, str(body.note, 500)) : whois.getNote(guild.id, id);
+			return { ok: true, note, locked: whois.isLocked(guild.id, id) };
 		}
 	}
 

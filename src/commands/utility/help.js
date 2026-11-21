@@ -23,6 +23,7 @@ module.exports = {
             .addFields(
                 { name: '/avatar *[mention]*', value: `displays avatar of the mentioned user`},
                 { name: '/botstats', value: `displays statistics relating to the bot`},
+                { name: '/dashboard', value: `get the link to the web dashboard (needs Manage Roles)`},
                 { name: '/help', value: `the classic help command`},
                 { name: '/ping', value: `checks the ping of bot`},
                 { name: '/server', value: `provides information about the server`},
@@ -51,7 +52,11 @@ module.exports = {
                 { name: '/reactionrole create | add | remove', value: `reaction role menus: react with an emoji to get a role`},
                 { name: '/reactionrole edit | list | delete', value: `set a menu's category (games, events...) or pick-one, list or delete menus`},
                 { name: '/embed send | edit', value: `post or edit a custom embed with a pop-up form`},
-                { name: '/setup-roles', value: `create Mod > Semi-Mod > Perms > Non-User roles (admins)`},
+                { name: '/whois set | clear | lock | post | unpost', value: `who's who: everyone in the server with a note, grouped by role (updates itself)`},
+                { name: '/aboutme', value: `write your own line on the who's who list`},
+                { name: '/event create | list | cancel | timezone', value: `post an event and ping its role before it starts`},
+                { name: '/roles-import', value:`paste a list of role names: creates them and posts a button menu per category`},
+                { name: '/setup-roles', value:`create Mod > Semi-Mod > Perms > Non-User roles (admins)`},
                 { name: '/role add | remove | info', value: `give or take a role from someone`},
                 { name: '/autorole set | off | show', value: `give new members a role automatically`},
             )
@@ -114,4 +119,4 @@ module.exports = {
             }
         })
 	},
-};
+};

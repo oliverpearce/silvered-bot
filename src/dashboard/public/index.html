@@ -32,16 +32,22 @@
 			</nav>
 			<div class="sidebar-foot">
 				<button id="refresh" class="ghost small" title="Reload channels, roles and emoji from Discord">↻ Refresh</button>
-				<button id="logout" class="ghost small" title="Forget the access key in this browser">Lock</button>
+				<button id="logout" class="ghost small" title="Log out of this browser">Log out</button>
 			</div>
 		</aside>
 		<main id="view" aria-live="polite"></main>
 	</div>
 
 	<div id="login" class="overlay" hidden>
+		<div class="card login-card" id="discord-login" style="display: none">
+			<h1>Silvered Dashboard</h1>
+			<p>Log in with Discord to manage servers where you have Administrator.</p>
+			<button type="button" class="primary" id="discord-login-button">Log in with Discord</button>
+			<p class="error" id="discord-login-error"></p>
+		</div>
 		<form class="card login-card" id="login-form">
 			<h1>Silvered Dashboard</h1>
-			<p>Paste your access key. That's the <code>DASHBOARD_KEY</code> you set on the host, or, when running on your own computer, the key in the link the bot prints on startup (<code>Dashboard: http://localhost:3001/#key=…</code>).</p>
+			<p>Paste the access key from the link the bot prints on startup (<code>Dashboard: http://localhost:3001/#key=…</code>).</p>
 			<input id="login-key" type="password" placeholder="Access key" autocomplete="off" required>
 			<button type="submit" class="primary">Unlock</button>
 			<p class="error" id="login-error"></p>

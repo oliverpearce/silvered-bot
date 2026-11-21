@@ -13,10 +13,10 @@ module.exports = {
 			content = 'The web dashboard is turned off (`DASHBOARD=off`).';
 		} else if (dashboard.mode === 'local') {
 			content = 'The dashboard is in local mode, so it only opens on the computer running the bot. The link (with the key) is printed in the console when the bot starts.';
-		} else if (!dashboard.url) {
-			content = 'The dashboard is on, but its address isn\'t set. Add `DASHBOARD_URL` (e.g. `http://123.45.67.89:25565/dashboard/`) in the host\'s Startup variables and restart.';
+		} else if (!dashboard.publicUrl) {
+			content = 'The dashboard is on, but its address isn\'t set. Add an https:// `DASHBOARD_URL` to `.env` and restart.';
 		} else {
-			content = `🛠️ **Dashboard:** ${dashboard.url}\nLog in with the dashboard password (\`DASHBOARD_KEY\`).`;
+			content = `🛠️ **Dashboard:** ${dashboard.publicUrl}/dashboard/\nLog in with Discord. You need Administrator in this server.`;
 		}
 		return interaction.reply({ content, flags: MessageFlags.Ephemeral });
 	},

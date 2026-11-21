@@ -2,7 +2,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-const dir = path.join(__dirname, 'data');
+const dir = path.join(__dirname, '..', '..', 'data');
 const file = path.join(dir, 'settings.json');
 
 function load() {

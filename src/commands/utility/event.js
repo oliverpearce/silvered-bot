@@ -1,6 +1,6 @@
 // /event: post an event (time shows in everyone's own timezone) and ping a role before it starts.
 const { SlashCommandBuilder, PermissionFlagsBits: P, InteractionContextType, MessageFlags, ChannelType } = require('discord.js');
-const events = require('../../events');
+const events = require('../../lib/events');
 
 const EPHEMERAL = MessageFlags.Ephemeral;
 const reply = (interaction, content) => interaction.reply({ content, flags: EPHEMERAL, allowedMentions: { parse: [] } });

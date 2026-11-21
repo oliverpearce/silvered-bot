@@ -1,6 +1,6 @@
 // /aboutme: anyone can write their own line on the server's "who's who" list.
 const { SlashCommandBuilder, InteractionContextType, MessageFlags } = require('discord.js');
-const whois = require('../../whois');
+const whois = require('../../lib/whois');
 
 module.exports = {
 	data: new SlashCommandBuilder()

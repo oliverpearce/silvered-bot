@@ -69,6 +69,7 @@ function modal({ title, text, confirm = 'OK', danger = false, checkbox, input })
 // ---------- state + API ----------
 
 const state = {
+	authMode: 'key',
 	key: null,
 	status: null,
 	guildId: null,
@@ -79,11 +80,14 @@ const state = {
 async function api(path, { method = 'GET', body } = {}) {
 	const res = await fetch(`/api${path}`, {
 		method,
-		headers: { 'x-dashboard-key': state.key ?? '', ...(body !== undefined ? { 'content-type': 'application/json' } : {}) },
+		headers: {
+			...(state.authMode === 'discord' ? { 'x-silvered-dashboard': '1' } : { 'x-dashboard-key': state.key ?? '' }),
+			...(body !== undefined ? { 'content-type': 'application/json' } : {}),
+		},
 		body: body !== undefined ? JSON.stringify(body) : undefined,
 	});
 	const data = await res.json().catch(() => ({}));
-	if (res.status === 401) { showLogin('That key didn\'t work. Use your DASHBOARD_KEY (or the newest key from the bot\'s console).'); throw new Error('Locked'); }
+	if (res.status === 401) { showLogin(state.authMode === 'discord' ? '' : 'That key didn\'t work. Use the newest key from the bot\'s console.'); throw new Error('Locked'); }
 	if (res.status === 429) { showLogin(data.error || 'Too many wrong keys. Wait a bit and try again.'); throw new Error('Locked'); }
 	if (!res.ok) throw new Error(data.error || `${res.status} ${res.statusText}`);
 	return data;
@@ -118,10 +122,15 @@ function channelSelect(value, onchange) {
 // ---------- login ----------
 
 function showLogin(err = '') {
+	const discord = state.authMode === 'discord';
 	$('#login').hidden = false;
-	$('#login-error').textContent = err;
-	$('#login-key').focus();
+	$('#discord-login').style.display = discord ? '' : 'none';
+	$('#login-form').style.display = discord ? 'none' : '';
+	$(discord ? '#discord-login-error' : '#login-error').textContent = err;
+	if (!discord) $('#login-key').focus();
 }
+
+$('#discord-login-button').addEventListener('click', () => { location.href = '/dashboard/auth/login'; });
 
 $('#login-form').addEventListener('submit', async e => {
 	e.preventDefault();
@@ -131,7 +140,12 @@ $('#login-form').addEventListener('submit', async e => {
 	await boot();
 });
 
-$('#logout').addEventListener('click', () => {
+$('#logout').addEventListener('click', async () => {
+	if (state.authMode === 'discord') {
+		await api('/auth/logout', { method: 'POST' }).catch(() => {});
+		location.replace('/dashboard/');
+		return;
+	}
 	store.del('key');
 	state.key = null;
 	showLogin();
@@ -146,7 +160,8 @@ async function boot() {
 		if (e.message !== 'Locked') $('#view').replaceChildren(h('div', { class: 'card' }, h('h2', {}, 'Can\'t load the dashboard'), h('p', {}, e.message)));
 		return;
 	}
-	const { bot, guilds, defaultGuild } = state.status;
+	const { bot, user, guilds, defaultGuild } = state.status;
+	if (user) $('#logout').title = `Logged in as ${user.displayName}. Log out of this browser.`;
 	if (bot) {
 		$('#bot-avatar').src = bot.avatar;
 		$('#bot-avatar').hidden = false;
@@ -156,7 +171,7 @@ async function boot() {
 	state.guildId = [saved, defaultGuild, guilds[0]?.id].find(id => id && guilds.some(g => g.id === id)) ?? null;
 	$('#guild-select').replaceChildren(...guilds.map(g => h('option', { value: g.id, selected: g.id === state.guildId }, g.name)));
 	if (!state.guildId) {
-		$('#view').replaceChildren(h('div', { class: 'card' }, h('h2', {}, 'The bot isn\'t in any servers yet'), h('p', {}, 'Invite it to your server first (see the walkthrough), then press Refresh.')));
+		$('#view').replaceChildren(h('div', { class: 'card' }, h('h2', {}, 'No servers to manage'), h('p', {}, 'Invite the bot to a server where you have Administrator, then press Refresh.')));
 		return;
 	}
 	await loadGuild();
@@ -1406,7 +1421,25 @@ function viewSettings() {
 
 // ---------- start ----------
 
-(function start() {
+const LOGIN_ERRORS = {
+	denied: 'Discord login was cancelled.',
+	failed: 'Discord login failed. Please try again.',
+	starting: 'The bot is still starting. Try again in a few seconds.',
+	'no-access': 'You need Administrator in a server the bot is in.',
+};
+
+(async function start() {
+	const auth = await fetch('/api/auth/mode').then(r => r.json()).catch(() => ({ mode: 'key' }));
+	state.authMode = auth.mode;
+	if (state.authMode === 'discord') {
+		store.del('key');
+		const login = new URLSearchParams(location.search).get('login');
+		if (login) {
+			history.replaceState(null, '', location.pathname);
+			return showLogin(LOGIN_ERRORS[login] ?? LOGIN_ERRORS.failed);
+		}
+		return boot();
+	}
 	const fromHash = /(?:^|[#&])key=([^&]+)/.exec(location.hash);
 	if (fromHash) {
 		state.key = decodeURIComponent(fromHash[1]);

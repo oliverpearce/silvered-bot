@@ -2,27 +2,28 @@
 //
 // Two ways to run it (DASHBOARD in .env):
 //   local  (default) its own server on 127.0.0.1:DASHBOARD_PORT, only reachable from this computer.
-//   public shares the bot's main port (PORT) at /dashboard/, reachable from anywhere.
+//   public shares the bot's main port at /dashboard/, with "Log in with Discord" (see auth.js).
 //
-// Security: every API call needs the access key (DASHBOARD_KEY). The key is sent in a custom header,
-// which also stops other websites from making requests to it from your browser. Too many wrong keys
-// from one IP get that IP locked out for a while.
+// Security: local mode needs the access key (DASHBOARD_KEY). Public mode needs a Discord session, and
+// each server is limited to people with Administrator there. Both use a custom request header,
+// which stops other websites from making requests from your browser.
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { ChannelType, PermissionFlagsBits, PermissionsBitField } = require('discord.js');
-const { botCantManage } = require('../roleUtils');
+const { botCantManage } = require('../lib/roleUtils');
 const { buildRows, makeButton } = require('../commands/roles/rolemenu');
 const { syncList } = require('../commands/roles/reactionrole');
-const roleMenus = require('../roleMenus');
-const storage = require('../storage');
-const whois = require('../whois');
-const welcome = require('../welcome');
-const modlog = require('../modlog');
-const events = require('../events');
-const scheduler = require('../scheduler');
-const { EmbedError, str, parseColor, hex, buildEmbed, embedToDraft } = require('../embeds');
+const roleMenus = require('../lib/roleMenus');
+const storage = require('../lib/storage');
+const whois = require('../lib/whois');
+const welcome = require('../lib/welcome');
+const modlog = require('../lib/modlog');
+const events = require('../lib/events');
+const scheduler = require('../lib/scheduler');
+const { EmbedError, str, parseColor, hex, buildEmbed, embedToDraft } = require('../lib/embeds');
+const { canManageGuild, manageableGuilds } = require('./auth');
 
 const PUBLIC_DIR = path.join(__dirname, 'public');
 // Paths are relative to /dashboard (public mode) or / (local mode).
@@ -297,22 +298,25 @@ scheduler.register('message', async (guild, job) => {
 
 // ---------- API ----------
 
-async function api(client, req, res, url) {
+async function api(client, req, res, url, viewer = null) {
 	const parts = url.pathname.split('/').filter(Boolean).slice(1); // drop "api"
 	const method = req.method;
 
 	if (parts[0] === 'status' && method === 'GET') {
+		const guilds = viewer ? await manageableGuilds(client, viewer.id) : [...client.guilds.cache.values()];
 		return {
 			ready: client.isReady(),
 			bot: client.isReady() ? { tag: client.user.tag, avatar: client.user.displayAvatarURL({ size: 64 }) } : null,
-			guilds: client.guilds.cache.map(g => ({ id: g.id, name: g.name, icon: g.iconURL({ size: 64 }), memberCount: g.memberCount })),
-			defaultGuild: client.dashboardDefaultGuild || null,
+			user: viewer,
+			guilds: guilds.map(g => ({ id: g.id, name: g.name, icon: g.iconURL({ size: 64 }), memberCount: g.memberCount })),
+			defaultGuild: guilds.some(g => g.id === client.dashboardDefaultGuild) ? client.dashboardDefaultGuild : null,
 			permissionGroups: PERMISSION_GROUPS,
 		};
 	}
 
 	if (parts[0] !== 'guilds' || !isSnowflake(parts[1])) throw new HttpError(404, 'Not found.');
 	const guild = client.guilds.cache.get(parts[1]);
+	if (viewer && !(guild && await canManageGuild(guild, viewer.id))) throw new HttpError(403, 'You need Administrator in that server to manage it.');
 	if (!guild) throw new HttpError(404, "I'm not in that server.");
 	const me = guild.members.me;
 	const [, , section, id, sub, subId] = parts;
@@ -674,7 +678,7 @@ async function api(client, req, res, url) {
  * In public mode it only claims /dashboard* and /api/* and returns false for anything else,
  * so the bot's status page can share the same port.
  */
-function createDashboardHandler(client, { key, defaultGuild, publicMode = false, allowedHosts = null }) {
+function createDashboardHandler(client, { key, defaultGuild, publicMode = false, allowedHosts = null, auth = null }) {
 	client.dashboardDefaultGuild = defaultGuild;
 	const lockout = makeLockout();
 
@@ -691,6 +695,11 @@ function createDashboardHandler(client, { key, defaultGuild, publicMode = false,
 			// Local mode: blocks "DNS rebinding" tricks where another website pretends to be localhost.
 			if (allowedHosts && !allowedHosts.has(req.headers.host)) return done(403, 'Forbidden', 'text/plain');
 
+			if (p === '/api/auth/mode' && req.method === 'GET') return done(200, { mode: auth ? 'discord' : 'key' });
+			if (auth && p.startsWith('/dashboard/auth/')) {
+				return await auth.handleRoute(req, res, url) || done(404, 'Not found', 'text/plain');
+			}
+
 			if (!isApi) {
 				if (p === '/dashboard') {
 					res.writeHead(301, { Location: `/dashboard/${url.search}` });
@@ -702,14 +711,25 @@ function createDashboardHandler(client, { key, defaultGuild, publicMode = false,
 				return done(200, fs.readFileSync(path.join(PUBLIC_DIR, file[0])), file[1]);
 			}
 
-			const ip = req.socket.remoteAddress ?? 'unknown';
-			if (lockout.blocked(ip)) return done(429, { error: 'Too many wrong keys. Wait 15 minutes and try again.' });
-			if (!keyMatches(req.headers['x-dashboard-key'], key)) {
-				lockout.fail(ip);
-				return done(401, { error: 'Wrong or missing access key.' });
+			let viewer = null;
+			if (auth) {
+				if (req.headers['x-silvered-dashboard'] !== '1') return done(403, { error: 'Forbidden.' });
+				viewer = auth.viewer(req);
+				if (!viewer) return done(401, { error: 'Log in with Discord.' });
+				if (p === '/api/auth/logout' && req.method === 'POST') {
+					auth.logout(req, res);
+					return done(200, { ok: true });
+				}
+			} else {
+				const ip = req.socket.remoteAddress ?? 'unknown';
+				if (lockout.blocked(ip)) return done(429, { error: 'Too many wrong keys. Wait 15 minutes and try again.' });
+				if (!keyMatches(req.headers['x-dashboard-key'], key)) {
+					lockout.fail(ip);
+					return done(401, { error: 'Wrong or missing access key.' });
+				}
 			}
 			if (!client.isReady()) return done(503, { error: 'The bot is still connecting to Discord, try again in a few seconds.' });
-			const result = await api(client, req, res, url);
+			const result = await api(client, req, res, url, viewer);
 			send(res, 200, result);
 		} catch (e) {
 			if (e instanceof HttpError) send(res, e.status, { error: e.message });

@@ -3,10 +3,10 @@
 const {
 	SlashCommandBuilder, PermissionFlagsBits, InteractionContextType, MessageFlags, ChannelType, EmbedBuilder, parseEmoji,
 } = require('discord.js');
-const roleMenus = require('../../roleMenus');
-const { botCantManage, memberCantManage } = require('../../roleUtils');
-const { fetchMessage } = require('../../messageLinks');
-const { parseColor } = require('../../embeds');
+const roleMenus = require('../../lib/roleMenus');
+const { botCantManage, memberCantManage } = require('../../lib/roleUtils');
+const { fetchMessage } = require('../../lib/messageLinks');
+const { parseColor } = require('../../lib/embeds');
 
 const EPHEMERAL = MessageFlags.Ephemeral;
 const MAX_ITEMS = 20; // Discord allows 20 different reactions per message

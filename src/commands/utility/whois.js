@@ -1,6 +1,6 @@
 // /whois: a "who's who" list of everyone in the server, with a note about each person.
 const { SlashCommandBuilder, PermissionFlagsBits: P, InteractionContextType, MessageFlags, ChannelType } = require('discord.js');
-const whois = require('../../whois');
+const whois = require('../../lib/whois');
 
 const EPHEMERAL = MessageFlags.Ephemeral;
 const reply = (interaction, content) => interaction.reply({ content, flags: EPHEMERAL, allowedMentions: { parse: [] } });

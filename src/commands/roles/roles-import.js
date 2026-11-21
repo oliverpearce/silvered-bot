@@ -16,9 +16,9 @@ const {
 	SlashCommandBuilder, PermissionFlagsBits: P, InteractionContextType, MessageFlags, ChannelType, EmbedBuilder,
 	ModalBuilder, LabelBuilder, TextInputBuilder, TextInputStyle,
 } = require('discord.js');
-const roleMenus = require('../../roleMenus');
-const { botCantManage, memberCantManage } = require('../../roleUtils');
-const { parseColor } = require('../../embeds');
+const roleMenus = require('../../lib/roleMenus');
+const { botCantManage, memberCantManage } = require('../../lib/roleUtils');
+const { parseColor } = require('../../lib/embeds');
 const { syncList } = require('./reactionrole');
 const { buildRows, makeButton } = require('./rolemenu');
 

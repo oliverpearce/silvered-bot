@@ -129,6 +129,7 @@ These steps use a Compute Engine VM, which keeps the bot connected to Discord an
    ExecStart=/usr/bin/node index.js
    Restart=always
    RestartSec=5
+   AmbientCapabilities=CAP_NET_BIND_SERVICE
 
    [Install]
    WantedBy=multi-user.target
@@ -138,19 +139,24 @@ These steps use a Compute Engine VM, which keeps the bot connected to Discord an
    journalctl -u silvered-bot -f
    ```
 
-6. Install [Caddy](https://caddyserver.com/docs/install#debian-ubuntu-raspbian) for automatic HTTPS, then set it up:
+6. Get a free HTTPS certificate. Certbot renews it automatically, and the bot loads each new one without restarting:
 
    ```
-   sudo tee /etc/caddy/Caddyfile > /dev/null <<EOF
-   bot.example.com {
-       redir / /dashboard/
-       reverse_proxy localhost:3000
-   }
+   sudo apt-get install -y certbot
+   sudo mkdir -p /var/www/silvered-bot /etc/silvered-bot/tls
+   sudo chown "$USER" /etc/silvered-bot/tls
+   sudo chmod 700 /etc/silvered-bot/tls
+   sudo tee /usr/local/bin/silvered-bot-cert > /dev/null <<EOF
+   #!/bin/sh
+   install -o $USER -m 600 "\$RENEWED_LINEAGE/fullchain.pem" /etc/silvered-bot/tls/fullchain.pem
+   install -o $USER -m 600 "\$RENEWED_LINEAGE/privkey.pem" /etc/silvered-bot/tls/privkey.pem
+   systemctl kill -s HUP silvered-bot
    EOF
-   sudo systemctl reload caddy
+   sudo chmod 755 /usr/local/bin/silvered-bot-cert
+   sudo certbot certonly --webroot -w /var/www/silvered-bot -d bot.example.com --deploy-hook /usr/local/bin/silvered-bot-cert
    ```
 
-7. Open `https://bot.example.com/` and log in with Discord. The status page is at `/health`.
+7. Open `https://bot.example.com/dashboard/` and log in with Discord. The status page is at `/health`.
 
 To update the bot:
 

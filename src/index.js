@@ -11,7 +11,7 @@ const { createDashboardHandler, startDashboard } = require('./dashboard/server')
 const { createDiscordAuth } = require('./dashboard/auth');
 const fs = require('node:fs');
 const path = require('node:path');
-const http = require('node:http');
+const { startWeb } = require('./web');
 
 if (!token) {
 	console.error('No bot token found! Set DISCORD_TOKEN in your .env file (or the host\'s environment variables).');
@@ -149,16 +149,13 @@ if (dashboard.mode === 'public') {
 	startDashboard(client, { port: dashboard.port, key: dashboard.key, defaultGuild: guildId });
 }
 
-// One web server on the host's port: the status page (for uptime pings) and, in public mode, the dashboard.
-http.createServer(async (req, res) => {
+// The status page (for uptime pings) and, in public mode, the dashboard over HTTPS.
+startWeb(async (req, res) => {
 	if (dashboardHandler && await dashboardHandler(req, res)) return;
 	const ok = client.isReady();
 	res.writeHead(ok ? 200 : 503, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });
 	res.end(ok ? `silvered-bot is online (${client.ws.ping}ms)` : 'starting up...');
-}).listen(port, () => {
-	console.log(`Status page listening on port ${port} (/health)`);
-	if (dashboardHandler) console.log(`Dashboard: ${dashboard.publicUrl}/dashboard/ (log in with Discord)`);
-});
+}, { port, publicUrl: dashboardHandler ? dashboard.publicUrl : null, tls: dashboard.tls });
 
 // Log in to Discord with your client's token
 client.login(token).catch(e => {

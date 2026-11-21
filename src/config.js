@@ -47,5 +47,13 @@ module.exports = {
 		key: process.env.DASHBOARD_KEY || crypto.randomBytes(18).toString('base64url'),
 		clientSecret: process.env.DISCORD_CLIENT_SECRET || '',
 		publicUrl: dashboardUrl(process.env.DASHBOARD_URL),
+		// Public mode serves HTTPS itself. These defaults match the hosting guide.
+		tls: {
+			certFile: process.env.TLS_CERT || '/etc/silvered-bot/tls/fullchain.pem',
+			keyFile: process.env.TLS_KEY || '/etc/silvered-bot/tls/privkey.pem',
+			acmeDir: process.env.ACME_DIR || '/var/www/silvered-bot',
+			httpPort: Number(process.env.HTTP_PORT) || 80,
+			httpsPort: Number(process.env.HTTPS_PORT) || 443,
+		},
 	},
 };

@@ -26,6 +26,7 @@ silvered-bot/
 ├─ src/
 │  ├─ index.js              Discord client and event handlers
 │  ├─ config.js             environment settings
+│  ├─ web.js                HTTPS and status page
 │  ├─ commands/
 │  │  ├─ fun/               echo, pokeguess
 │  │  ├─ roles/             autorole, reactionrole, role, rolemenu, roles-import, setup-roles

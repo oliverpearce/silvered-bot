@@ -198,6 +198,40 @@ function permissionBanner() {
 	return h('div', { class: 'banner' }, 'The bot doesn\'t have the Manage Roles permission in this server, so it can\'t give out or edit roles. Give its role Manage Roles (or Administrator) in Server Settings → Roles.');
 }
 
+// ---------- :shortcode: emoji ----------
+// Discord only converts :heart: when a person types it. Bots have to send the real emoji.
+const EMOJI_CODES = {
+	heart: '❤️', orange_heart: '🧡', yellow_heart: '💛', green_heart: '💚', blue_heart: '💙', purple_heart: '💜',
+	pink_heart: '🩷', light_blue_heart: '🩵', grey_heart: '🩶', white_heart: '🤍', black_heart: '🖤', brown_heart: '🤎',
+	heartpulse: '💗', heartbeat: '💓', sparkling_heart: '💖', two_hearts: '💕', revolving_hearts: '💞', cupid: '💘', gift_heart: '💝', broken_heart: '💔',
+	red_circle: '🔴', orange_circle: '🟠', yellow_circle: '🟡', green_circle: '🟢', blue_circle: '🔵', purple_circle: '🟣', black_circle: '⚫', white_circle: '⚪',
+	star: '⭐', star2: '🌟', sparkles: '✨', fire: '🔥', tada: '🎉', art: '🎨', bell: '🔔', calendar: '📆', date: '📅', video_game: '🎮', joystick: '🕹️', game_die: '🎲', space_invader: '👾',
+	trophy: '🏆', crossed_swords: '⚔️', shield: '🛡️', musical_note: '🎵', notes: '🎶', headphones: '🎧', movie_camera: '🎥', clapper: '🎬', camera: '📷', books: '📚', pencil: '📝', computer: '💻',
+	crescent_moon: '🌙', sunny: '☀️', cherry_blossom: '🌸', rainbow: '🌈', pizza: '🍕', coffee: '☕', cat: '🐱', dog: '🐶', wave: '👋', thumbsup: '👍', speech_balloon: '💬', loudspeaker: '📢', mega: '📣',
+	white_check_mark: '✅', x: '❌', warning: '⚠️', eyes: '👀', skull: '💀', crown: '👑', gem: '💎', ribbon: '🎀', butterfly: '🦋',
+};
+
+/** Swaps :heart: for ❤️ and :server_emoji: for that emoji. Anything it doesn't know is left alone. */
+function fixEmoji(text) {
+	if (typeof text !== 'string' || !text.includes(':')) return text;
+	return text.replace(/<a?:\w+:\d+>|:([a-z0-9_]+):/gi, (all, name) => {
+		if (!name) return all;
+		return state.guild?.emojis?.find(e => e.name === name)?.text ?? EMOJI_CODES[name.toLowerCase()] ?? all;
+	});
+}
+
+function fixEmbedEmoji(e) {
+	if (!e) return e;
+	return {
+		...e,
+		title: fixEmoji(e.title),
+		description: fixEmoji(e.description),
+		author: e.author && { ...e.author, name: fixEmoji(e.author.name) },
+		footer: e.footer && { ...e.footer, text: fixEmoji(e.footer.text) },
+		fields: (e.fields ?? []).map(x => ({ ...x, name: fixEmoji(x.name), value: fixEmoji(x.value) })),
+	};
+}
+
 // ---------- Discord-style markdown for the preview ----------
 
 function escapeHtml(s) {
@@ -208,7 +242,7 @@ function markdown(text, { block = true } = {}) {
 	if (!text) return '';
 	const stash = [];
 	const keep = html => `\u0000${stash.push(html) - 1}\u0000`;
-	let s = escapeHtml(text);
+	let s = escapeHtml(fixEmoji(text));
 
 	s = s.replace(/```(?:[a-z0-9]+\n)?([\s\S]*?)```/gi, (_, code) => keep(`<div class="md-pre">${code}</div>`));
 	s = s.replace(/`([^`\n]+)`/g, (_, code) => keep(`<span class="md-code">${code}</span>`));
@@ -272,6 +306,7 @@ function emojiField(value, onchange) {
 }
 
 function emojiPreview(text) {
+	text = fixEmoji(text);
 	const m = /^<(a?):(\w+):(\d{17,20})>$/.exec(text ?? '');
 	if (m) return h('img', { src: `https://cdn.discordapp.com/emojis/${m[3]}.${m[1] ? 'gif' : 'webp'}?size=48`, alt: m[2] });
 	return text ? document.createTextNode(text) : null;
@@ -292,18 +327,25 @@ const DEFAULT_DRAFT = () => ({
 });
 
 // Ready-made starting points for common messages. Pick one, then add your roles and tweak.
-const COLOUR_EMOJI = { red: '🔴', orange: '🟠', yellow: '🟡', green: '🟢', blue: '🔵', purple: '🟣', pink: '🩷', black: '⚫', white: '⚪', brown: '🟤' };
+const COLOUR_EMOJI = { red: '❤️', orange: '🧡', yellow: '💛', green: '💚', blue: '💙', purple: '💜', pink: '💗', gray: '🤍', grey: '🤍', white: '🤍', black: '🖤', brown: '🤎' };
 const TEMPLATES = {
 	colours: {
 		label: '🎨 Colour roles',
-		embed: { title: '🎨 Pick your colour', description: 'React to pick the colour of your name. You can only have one, so picking a new one swaps it.', color: '#ff69b4' },
+		embed: { title: '🎨 pick ur colour :3', description: 'React to pick the colour of your name. You can only have one, so picking a new one swaps it.', color: '#ff69b4' },
 		menu: { mode: 'reactions', unique: true, category: 'Colours' },
-		// Pre-fills any roles named after a colour ("Red", "Blue"…) with a matching emoji.
-		items: () => assignableRoles()
-			.map(r => ({ r, word: Object.keys(COLOUR_EMOJI).find(w => r.name.toLowerCase().includes(w)) }))
-			.filter(x => x.word)
-			.slice(0, 20)
-			.map(({ r, word }) => ({ roleId: r.id, emoji: COLOUR_EMOJI[word], label: '' })),
+		// Pre-fills roles named after a colour ("Red", "blue"…) with its heart, in rainbow order.
+		items: () => {
+			const roles = assignableRoles();
+			const used = new Set();
+			return Object.entries(COLOUR_EMOJI).flatMap(([word, emoji]) => {
+				const role = roles.find(r => r.name.trim().toLowerCase() === word);
+				if (!role || used.has(emoji)) return [];
+				used.add(emoji);
+				return [{ roleId: role.id, emoji, label: '' }];
+			});
+		},
+		// The list people read: "❤️ - Red"
+		describe: items => items.map(i => `${i.emoji} - ${roleById(i.roleId)?.name}`).join('\n'),
 	},
 	games: {
 		label: '🎮 Games',
@@ -475,12 +517,14 @@ function viewSend() {
 		draft = {
 			...fresh,
 			channelId: draft.channelId,
+			editing: draft.editing, // keep editing the loaded message, if there is one
 			content: t.content ?? '',
 			embed: { ...fresh.embed, ...t.embed, author: { ...fresh.embed.author, ...t.embed.author }, footer: { ...fresh.embed.footer, ...t.embed.footer }, fields: (t.embed.fields ?? []).map(f => ({ ...f })) },
 			embedOn: Object.keys(t.embed ?? {}).length > 0,
 			menuOn: t.menuOn ?? true,
 			menu: { ...fresh.menu, ...t.menu, items: t.items ? t.items() : [] },
 		};
+		if (t.describe && draft.menu.items.length) draft.embed.description = t.describe(draft.menu.items);
 		store.set('draft', draft);
 		render();
 		toast(!draft.menuOn ? 'Template loaded.' : draft.menu.items.length ? `Loaded with ${draft.menu.items.length} roles. Check them, then send.` : 'Now add your roles under Role menu, then send.');
@@ -637,13 +681,13 @@ function renderPreview() {
 
 async function sendMessage(btn, sendAt = null) {
 	if (!draft.channelId) return toast('Pick a channel first.', 'warn');
-	const items = draft.menuOn ? draft.menu.items.filter(i => i.roleId) : [];
+	const items = (draft.menuOn ? draft.menu.items.filter(i => i.roleId) : []).map(i => ({ ...i, emoji: fixEmoji(i.emoji) }));
 	if (draft.menuOn && draft.menu.items.length && !items.length) return toast('Pick a role for each menu row (or close the Role menu section).', 'warn');
 	const editing = draft.editing;
 	const body = {
 		channelId: editing?.channelId ?? draft.channelId,
-		content: draft.content,
-		embed: draft.embedOn ? draft.embed : null,
+		content: fixEmoji(draft.content),
+		embed: draft.embedOn ? fixEmbedEmoji(draft.embed) : null,
 		menu: items.length ? { mode: draft.menu.mode, unique: draft.menu.unique, category: draft.menu.category ?? '', items } : null,
 		allowMentions: draft.allowMentions,
 	};

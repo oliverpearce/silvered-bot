@@ -17,7 +17,7 @@
 | `/whois set` / `clear` / `lock` / `post` / `unpost` | Manages the self-updating who's who list | See `/help` |
 | `/aboutme` | Writes your own line on the who's who list | Everyone |
 | `/event create` / `list` / `cancel` / `timezone` | Posts an event and pings its role before it starts | See `/help` |
-| `/dashboard` | Gets the link to the web dashboard | Manage Roles |
+| `/dashboard` | Sends a private, single-use dashboard login link | Administrator |
 | `/help`, `/ping`, `/user`, `/avatar`, `/server`, `/botstats`, `/url-lookup`, `/echo`, `/pokeguess` | General commands | Everyone |
 
 Nobody can hand out a role at or above their own highest role. The bot's role must sit above every role it manages (Server Settings → Roles).
@@ -67,10 +67,10 @@ Set the mode with `DASHBOARD` in `.env`:
 | `DASHBOARD=` | Address | Access |
 |---|---|---|
 | `local` (default) | `http://localhost:3001/#key=...` (printed in the console) | Only the computer running the bot |
-| `public` | `https://<your-domain>/dashboard/` | People with Administrator in a server the bot is in, using Discord login |
+| `public` | `https://<your-domain>/dashboard/` | People with Administrator in a server the bot is in, using a `/dashboard` login link |
 | `off` | None | Nobody |
 
-Public mode only asks Discord who you are. It shows the servers where you have **Administrator**, checks this on every request, and does not keep your Discord token. Sessions last 7 days and end when the bot restarts.
+In public mode, run `/dashboard` in Discord to get a private login link. It works once and expires in 5 minutes. The dashboard shows the servers where you have **Administrator** and checks this on every request. Sessions last 7 days and end when the bot restarts.
 
 Local mode uses an access key instead. An IP that gets it wrong 10 times is locked out for 15 minutes.
 
@@ -107,13 +107,7 @@ These steps use a Compute Engine VM, which keeps the bot connected to Discord an
    nano .env
    ```
 
-4. In the [Discord Developer Portal](https://discord.com/developers/applications), open **OAuth2**, copy the **Client Secret**, and add this redirect:
-
-   ```
-   https://bot.example.com/dashboard/auth/callback
-   ```
-
-   In `.env`, set `DISCORD_TOKEN`, `CLIENT_ID`, `DISCORD_CLIENT_SECRET`, `DASHBOARD=public` and `DASHBOARD_URL=https://bot.example.com`. `GUILD_ID` is optional.
+4. In `.env`, set `DISCORD_TOKEN`, `CLIENT_ID`, `DASHBOARD=public` and `DASHBOARD_URL=https://bot.example.com`. `GUILD_ID` is optional.
 5. Run the bot as a service so it starts on boot and restarts after a crash:
 
    ```
@@ -156,7 +150,7 @@ These steps use a Compute Engine VM, which keeps the bot connected to Discord an
    sudo certbot certonly --webroot -w /var/www/silvered-bot -d bot.example.com --deploy-hook /usr/local/bin/silvered-bot-cert
    ```
 
-7. Open `https://bot.example.com/dashboard/` and log in with Discord. The status page is at `/health`.
+7. Run `/dashboard` in Discord and open the private link. The status page is at `/health`.
 
 To update the bot:
 

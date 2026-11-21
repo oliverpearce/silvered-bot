@@ -38,14 +38,13 @@ module.exports = {
 	port: process.env.PORT || 3000,
 	dashboard: {
 		// DASHBOARD=local  (default) only reachable from this computer, on DASHBOARD_PORT.
-		// DASHBOARD=public shares the main port at /dashboard/ with Discord login.
-		//                  Needs DISCORD_CLIENT_SECRET and an https:// DASHBOARD_URL.
+		// DASHBOARD=public serves /dashboard/ over HTTPS, with login links from /dashboard in Discord.
+		//                  Needs an https:// DASHBOARD_URL.
 		// DASHBOARD=off    no dashboard.
 		mode: dashboardMode(process.env.DASHBOARD),
 		port: Number(process.env.DASHBOARD_PORT) || 3001,
 		// Local mode only. Set DASHBOARD_KEY to keep the same key between restarts.
 		key: process.env.DASHBOARD_KEY || crypto.randomBytes(18).toString('base64url'),
-		clientSecret: process.env.DISCORD_CLIENT_SECRET || '',
 		publicUrl: dashboardUrl(process.env.DASHBOARD_URL),
 		// Public mode serves HTTPS itself. These defaults match the hosting guide.
 		tls: {

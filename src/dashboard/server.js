@@ -2,7 +2,7 @@
 //
 // Two ways to run it (DASHBOARD in .env):
 //   local  (default) its own server on 127.0.0.1:DASHBOARD_PORT, only reachable from this computer.
-//   public shares the bot's main port at /dashboard/, with "Log in with Discord" (see auth.js).
+//   public shares the bot's main port at /dashboard/, with login links from /dashboard in Discord (see auth.js).
 //
 // Security: local mode needs the access key (DASHBOARD_KEY). Public mode needs a Discord session, and
 // each server is limited to people with Administrator there. Both use a custom request header,
@@ -696,9 +696,6 @@ function createDashboardHandler(client, { key, defaultGuild, publicMode = false,
 			if (allowedHosts && !allowedHosts.has(req.headers.host)) return done(403, 'Forbidden', 'text/plain');
 
 			if (p === '/api/auth/mode' && req.method === 'GET') return done(200, { mode: auth ? 'discord' : 'key' });
-			if (auth && p.startsWith('/dashboard/auth/')) {
-				return await auth.handleRoute(req, res, url) || done(404, 'Not found', 'text/plain');
-			}
 
 			if (!isApi) {
 				if (p === '/dashboard') {
@@ -714,8 +711,13 @@ function createDashboardHandler(client, { key, defaultGuild, publicMode = false,
 			let viewer = null;
 			if (auth) {
 				if (req.headers['x-silvered-dashboard'] !== '1') return done(403, { error: 'Forbidden.' });
+				if (p === '/api/auth/link' && req.method === 'POST') {
+					const body = await readJson(req);
+					if (!auth.redeem(res, body.token)) return done(400, { error: 'That login link expired or was already used. Run /dashboard in Discord for a new one.' });
+					return done(200, { ok: true });
+				}
 				viewer = auth.viewer(req);
-				if (!viewer) return done(401, { error: 'Log in with Discord.' });
+				if (!viewer) return done(401, { error: 'Run /dashboard in Discord to log in.' });
 				if (p === '/api/auth/logout' && req.method === 'POST') {
 					auth.logout(req, res);
 					return done(200, { ok: true });

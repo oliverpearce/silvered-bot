@@ -130,8 +130,6 @@ function showLogin(err = '') {
 	if (!discord) $('#login-key').focus();
 }
 
-$('#discord-login-button').addEventListener('click', () => { location.href = '/dashboard/auth/login'; });
-
 $('#login-form').addEventListener('submit', async e => {
 	e.preventDefault();
 	state.key = $('#login-key').value.trim();
@@ -1421,22 +1419,19 @@ function viewSettings() {
 
 // ---------- start ----------
 
-const LOGIN_ERRORS = {
-	denied: 'Discord login was cancelled.',
-	failed: 'Discord login failed. Please try again.',
-	starting: 'The bot is still starting. Try again in a few seconds.',
-	'no-access': 'You need Administrator in a server the bot is in.',
-};
-
 (async function start() {
 	const auth = await fetch('/api/auth/mode').then(r => r.json()).catch(() => ({ mode: 'key' }));
 	state.authMode = auth.mode;
 	if (state.authMode === 'discord') {
 		store.del('key');
-		const login = new URLSearchParams(location.search).get('login');
-		if (login) {
+		const link = /(?:^|[#&])login=([^&]+)/.exec(location.hash);
+		if (link) {
 			history.replaceState(null, '', location.pathname);
-			return showLogin(LOGIN_ERRORS[login] ?? LOGIN_ERRORS.failed);
+			try {
+				await api('/auth/link', { method: 'POST', body: { token: decodeURIComponent(link[1]) } });
+			} catch (e) {
+				return showLogin(e.message);
+			}
 		}
 		return boot();
 	}

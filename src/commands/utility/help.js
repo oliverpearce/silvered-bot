@@ -23,7 +23,7 @@ module.exports = {
             .addFields(
                 { name: '/avatar *[mention]*', value: `displays avatar of the mentioned user`},
                 { name: '/botstats', value: `displays statistics relating to the bot`},
-                { name: '/dashboard', value: `get the link to the web dashboard (needs Manage Roles)`},
+                { name: '/dashboard', value: `get your private dashboard login link (needs Administrator)`},
                 { name: '/help', value: `the classic help command`},
                 { name: '/ping', value: `checks the ping of bot`},
                 { name: '/server', value: `provides information about the server`},

@@ -138,10 +138,11 @@ process.on('unhandledRejection', e => console.error('Unhandled rejection:', e));
 // Web dashboard. See config.js for the DASHBOARD modes.
 let dashboardHandler = null;
 if (dashboard.mode === 'public') {
-	if (!clientId || !dashboard.clientSecret || !dashboard.publicUrl) {
-		console.error('[dashboard] DASHBOARD=public needs CLIENT_ID, DISCORD_CLIENT_SECRET and an https:// DASHBOARD_URL. The dashboard is OFF until you set them.');
+	if (!dashboard.publicUrl) {
+		console.error('[dashboard] DASHBOARD=public needs an https:// DASHBOARD_URL. The dashboard is OFF until you set it.');
 	} else {
-		const auth = createDiscordAuth(client, { clientId, clientSecret: dashboard.clientSecret, publicUrl: dashboard.publicUrl });
+		const auth = createDiscordAuth(client, { publicUrl: dashboard.publicUrl });
+		client.dashboardAuth = auth;
 		dashboardHandler = createDashboardHandler(client, { key: dashboard.key, defaultGuild: guildId, publicMode: true, auth });
 	}
 } else if (dashboard.mode === 'local') {

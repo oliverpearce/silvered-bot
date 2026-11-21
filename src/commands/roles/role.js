@@ -1,6 +1,6 @@
 // Mods give/take roles: /role add, /role remove, /role info
 const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder, InteractionContextType, MessageFlags } = require('discord.js');
-const { botCantManage, memberCantManage } = require('../../roleUtils');
+const { botCantManage, memberCantManage } = require('../../lib/roleUtils');
 
 module.exports = {
 	data: new SlashCommandBuilder()

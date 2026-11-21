@@ -1,7 +1,7 @@
 // Give every new member a role automatically when they join.
 const { SlashCommandBuilder, PermissionFlagsBits, InteractionContextType, MessageFlags } = require('discord.js');
-const { botCantManage, memberCantManage } = require('../../roleUtils');
-const storage = require('../../storage');
+const { botCantManage, memberCantManage } = require('../../lib/roleUtils');
+const storage = require('../../lib/storage');
 
 module.exports = {
 	data: new SlashCommandBuilder()

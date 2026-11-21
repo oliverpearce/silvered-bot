@@ -5,7 +5,7 @@ const {
 	SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder, InteractionContextType, MessageFlags,
 	ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType,
 } = require('discord.js');
-const { botCantManage, memberCantManage } = require('../../roleUtils');
+const { botCantManage, memberCantManage } = require('../../lib/roleUtils');
 
 const MAX_ROLES = 10;
 const EPHEMERAL = MessageFlags.Ephemeral;

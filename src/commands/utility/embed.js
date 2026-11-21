@@ -4,8 +4,8 @@ const {
 	SlashCommandBuilder, PermissionFlagsBits, InteractionContextType, MessageFlags, ChannelType,
 	ModalBuilder, LabelBuilder, TextInputBuilder, TextInputStyle,
 } = require('discord.js');
-const { buildEmbed, embedToDraft, parseColor } = require('../../embeds');
-const { fetchMessage } = require('../../messageLinks');
+const { buildEmbed, embedToDraft, parseColor } = require('../../lib/embeds');
+const { fetchMessage } = require('../../lib/messageLinks');
 
 const EPHEMERAL = MessageFlags.Ephemeral;
 

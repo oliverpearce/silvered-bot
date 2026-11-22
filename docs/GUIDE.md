@@ -18,6 +18,7 @@
 | `/aboutme` | Writes your own line on the who's who list | Everyone |
 | `/event create` / `list` / `cancel` / `timezone` | Posts an event and pings its role before it starts | See `/help` |
 | `/dashboard` | Sends a private, single-use dashboard login link | Administrator |
+| `/status set` / `show` / `reset` | Changes the bot's activity, text and online status. The choice survives restarts | Bot owner (`show`: Administrator) |
 | `/help`, `/ping`, `/user`, `/avatar`, `/server`, `/botstats`, `/url-lookup`, `/echo`, `/pokeguess` | General commands | Everyone |
 
 Nobody can hand out a role at or above their own highest role. The bot's role must sit above every role it manages (Server Settings → Roles).

@@ -27,6 +27,7 @@ module.exports = {
                 { name: '/help', value: `the classic help command`},
                 { name: '/ping', value: `checks the ping of bot`},
                 { name: '/server', value: `provides information about the server`},
+                { name: '/status set | show | reset', value: `change the bot's status (bot owner)`},
                 { name: '/url-lookup', value: `extract info from a url`},
                 { name: '/user *[mention]*', value: `provides information about the mentioned user`},
             )

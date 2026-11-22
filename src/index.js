@@ -1,11 +1,12 @@
 // Require the necessary discord.js classes
-const { Client, Collection, Events, GatewayIntentBits, ActivityType, REST, Routes, MessageFlags, Partials } = require('discord.js');
+const { Client, Collection, Events, GatewayIntentBits, REST, Routes, MessageFlags, Partials } = require('discord.js');
 const { token, clientId, guildId, port, dashboard } = require('./config');
 const roleMenus = require('./lib/roleMenus');
 const whois = require('./lib/whois');
 const welcome = require('./lib/welcome');
 const modlog = require('./lib/modlog');
 const scheduler = require('./lib/scheduler');
+const presence = require('./lib/presence');
 require('./lib/events'); // registers the event reminder job
 const { createDashboardHandler, startDashboard } = require('./dashboard/server');
 const { createDiscordAuth } = require('./dashboard/auth');
@@ -62,7 +63,6 @@ async function registerCommands(appId) {
 
 client.once(Events.ClientReady, async c => {
 	console.log(`Ready! Logged in as ${c.user.tag} :D`);
-	c.user.setActivity({ name: 'you <3', type: ActivityType.Listening });
 	try {
 		await registerCommands(clientId || c.user.id);
 	} catch (e) {
@@ -70,6 +70,9 @@ client.once(Events.ClientReady, async c => {
 	}
 	scheduler.start(c);
 });
+
+// Runs on first login and after a full reconnect, which clears the bot's status.
+client.on(Events.ShardReady, () => presence.apply(client));
 
 // Autorole for new members
 client.on(Events.GuildMemberAdd, member => {

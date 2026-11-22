@@ -40,8 +40,6 @@ silvered-bot/
 │                           scheduler, storage, welcome, who's who
 ├─ scripts/
 │  └─ deploy-commands.js    manual slash command registration
-├─ docs/
-│  └─ GUIDE.md
-└─ .github/workflows/
-   └─ keep-alive.yml        scheduled uptime check
+└─ docs/
+   └─ GUIDE.md
 ```

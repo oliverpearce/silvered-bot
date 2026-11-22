@@ -167,13 +167,3 @@ Role menus and settings are saved in `data/settings.json`. They survive restarts
 ```
 gcloud compute scp <vm-name>:~/silvered-bot/data/settings.json . --zone <zone>
 ```
-
-## Keep-alive checks
-
-`.github/workflows/keep-alive.yml` pings `/health` at 08:00 and 20:00 UTC. Change the `cron:` line to use other times.
-
-1. Push the repository to GitHub.
-2. Under **Settings → Secrets and variables → Actions**, add a secret named `BOT_URL` set to your address, such as `https://bot.example.com` (no `/dashboard`).
-3. On the **Actions** tab, choose **Keep alive** and press **Run workflow** to test it.
-
-If the bot is down, the run fails and GitHub emails you. GitHub can run scheduled jobs late, and it disables them after 60 days without commits. You can re-enable them from the **Actions** tab. The ping only reports problems, and systemd is what restarts a crashed bot.

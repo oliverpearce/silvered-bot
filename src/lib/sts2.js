@@ -218,7 +218,7 @@ function buildCardMessage(card, variantKey = 'base') {
 	return { components: [container], flags: MessageFlags.IsComponentsV2 };
 }
 
-/** A relic: small icon with the name beside it, what it does underneath in small text, and a Beta art button if it has one. */
+/** A relic: what it does in small text, with the icon as a thumbnail on the right, and a Beta art button if it has one. */
 function buildRelicMessage(relic, variantKey = 'base') {
 	const options = RELIC_VARIANTS.filter(v => relic.images[v.key]);
 	const variant = options.find(v => v.key === variantKey) ?? options[0] ?? RELIC_VARIANTS[0];
@@ -226,8 +226,8 @@ function buildRelicMessage(relic, variantKey = 'base') {
 
 	const embed = new EmbedBuilder()
 		.setColor(COLORS[relic.color] ?? COLORS.Colorless)
-		.setAuthor({ name: relic.name, iconURL: relic.images[variant.key] ?? undefined })
 		.setDescription(effect.slice(0, 4096));
+	if (relic.images[variant.key]) embed.setThumbnail(relic.images[variant.key]);
 	const components = options.length > 1 ? [variantButtons('sts2r', relic.name, options, variant.key)] : [];
 	return { embeds: [embed], components };
 }

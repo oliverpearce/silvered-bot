@@ -218,15 +218,15 @@ function buildCardMessage(card, variantKey = 'base') {
 	return { components: [container], flags: MessageFlags.IsComponentsV2 };
 }
 
-/** A relic: what it does in small text, with the icon as a thumbnail on the right, and a Beta art button if it has one. */
+/** A relic: bold name, what it does, its rarity in small text, the icon on the right, and a Beta art button if it has one. */
 function buildRelicMessage(relic, variantKey = 'base') {
 	const options = RELIC_VARIANTS.filter(v => relic.images[v.key]);
 	const variant = options.find(v => v.key === variantKey) ?? options[0] ?? RELIC_VARIANTS[0];
-	const effect = (relic.description || 'No description on the wiki yet.').split('\n').map(line => `-# ${line}`).join('\n');
+	const text = `**${relic.name}**\n${relic.description || '*No description on the wiki yet.*'}${relic.rarity ? `\n-# ${relic.rarity}` : ''}`;
 
 	const embed = new EmbedBuilder()
 		.setColor(COLORS[relic.color] ?? COLORS.Colorless)
-		.setDescription(effect.slice(0, 4096));
+		.setDescription(text.slice(0, 4096));
 	if (relic.images[variant.key]) embed.setThumbnail(relic.images[variant.key]);
 	const components = options.length > 1 ? [variantButtons('sts2r', relic.name, options, variant.key)] : [];
 	return { embeds: [embed], components };

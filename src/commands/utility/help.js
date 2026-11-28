@@ -41,6 +41,7 @@ module.exports = {
                 { name: '/pokeguess *[generation]*', value: `start a pokemon guessing game!`},
                 { name: '/echo *[input]*', value: `replies with your input!`},
                 { name: '/card *[name]*  or  [[card name]]', value: `look up a Slay the Spire 2 card, with buttons for upgraded and beta art`},
+                { name: '/relic *[name]*  or  {{relic name}}', value: `look up a Slay the Spire 2 relic`},
             )
             .setFooter({ text: 'Fun' })
             .setTimestamp()

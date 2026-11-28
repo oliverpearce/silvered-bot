@@ -3,7 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const axios = require('axios');
-const { ContainerBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
+const { ContainerBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
 
 const WIKI = 'https://slaythespire.wiki.gg';
 const API = `${WIKI}/api.php`;
@@ -218,23 +218,18 @@ function buildCardMessage(card, variantKey = 'base') {
 	return { components: [container], flags: MessageFlags.IsComponentsV2 };
 }
 
-/** A relic: name, effect and rarity/class, with the icon beside them, and a Beta art button if it has one. */
+/** A relic: small icon with the name beside it, what it does underneath in small text, and a Beta art button if it has one. */
 function buildRelicMessage(relic, variantKey = 'base') {
 	const options = RELIC_VARIANTS.filter(v => relic.images[v.key]);
 	const variant = options.find(v => v.key === variantKey) ?? options[0] ?? RELIC_VARIANTS[0];
-	const footer = [relic.rarity, relic.color].filter(Boolean).join(' · ');
-	const text = `**${relic.name}**\n${relic.description || '*No description on the wiki yet.*'}\n-# ${footer}`.slice(0, 3900);
+	const effect = (relic.description || 'No description on the wiki yet.').split('\n').map(line => `-# ${line}`).join('\n');
 
-	const container = new ContainerBuilder().setAccentColor(COLORS[relic.color] ?? COLORS.Colorless);
-	if (relic.images[variant.key]) {
-		container.addSectionComponents(s => s
-			.addTextDisplayComponents(t => t.setContent(text))
-			.setThumbnailAccessory(th => th.setURL(relic.images[variant.key]).setDescription(`${relic.name} (${variant.label})`)));
-	} else {
-		container.addTextDisplayComponents(t => t.setContent(text));
-	}
-	if (options.length > 1) container.addActionRowComponents(variantButtons('sts2r', relic.name, options, variant.key));
-	return { components: [container], flags: MessageFlags.IsComponentsV2 };
+	const embed = new EmbedBuilder()
+		.setColor(COLORS[relic.color] ?? COLORS.Colorless)
+		.setAuthor({ name: relic.name, iconURL: relic.images[variant.key] ?? undefined })
+		.setDescription(effect.slice(0, 4096));
+	const components = options.length > 1 ? [variantButtons('sts2r', relic.name, options, variant.key)] : [];
+	return { embeds: [embed], components };
 }
 
 module.exports = {

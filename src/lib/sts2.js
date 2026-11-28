@@ -3,7 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const axios = require('axios');
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { ContainerBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
 
 const WIKI = 'https://slaythespire.wiki.gg';
 const API = `${WIKI}/api.php`;
@@ -152,51 +152,6 @@ function findCard(query) {
 
 // --- Text cleanup -------------------------------------------------------
 
-/** Picks base or upgraded text from "(a;b)" pairs, which can be nested inside other markup. */
-function pickVersion(text, upgraded) {
-	let out = '';
-	let i = 0;
-	while (i < text.length) {
-		if (text[i] === '(') {
-			// Find the matching ")" and a top-level ";" inside it.
-			let depth = 0, semi = -1, end = -1;
-			for (let j = i; j < text.length; j++) {
-				const ch = text[j];
-				if (ch === '(') depth++;
-				else if (ch === ')') { depth--; if (depth === 0) { end = j; break; } }
-				else if (ch === ';' && depth === 1 && semi === -1) semi = j;
-			}
-			if (end !== -1 && semi !== -1) {
-				const part = upgraded ? text.slice(semi + 1, end) : text.slice(i + 1, semi);
-				out += pickVersion(part, upgraded);
-				i = end + 1;
-				continue;
-			}
-		}
-		out += text[i++];
-	}
-	return out;
-}
-
-function cleanDescription(text, upgraded = false) {
-	let s = pickVersion(text ?? '', upgraded);
-	s = s.replace(/<br\s*\/?>/gi, '\n')
-		.replace(/\[\[File:[^\]]*Energy[^\]]*\]\]/gi, '⚡')
-		.replace(/\[\[File:[^\]]*Star[^\]]*\]\]/gi, '⭐')
-		.replace(/\[\[File:[^\]]*\]\]\s*/gi, '')
-		.replace(/\[\[[^\]|]*\|([^\]]*)\]\]/g, '$1')
-		.replace(/\[\[([^\]]*)\]\]/g, '$1')
-		.replace(/\[https?:\/\/\S+ ([^\]]*)\]/g, '$1')
-		.replace(/<[^>]+>/g, '')
-		.replace(/'''(.*?)'''/g, '**$1**')
-		.replace(/''(.*?)''/g, '*$1*')
-		.replace(/&nbsp;/g, ' ')
-		.replace(/[ \t]+/g, ' ')
-		.replace(/ *\n */g, '\n')
-		.replace(/\n{2,}/g, '\n');
-	return s.trim();
-}
-
 /** Turns a bit of raw wikitext (the "Obtaining" section) into readable Discord text. */
 function cleanWikitext(text) {
 	let s = text;
@@ -286,41 +241,30 @@ function variants(card) {
 	return VARIANTS.filter(v => card.images[v.key] && !(v.upgraded && card.noUpgrade));
 }
 
-function costText(cost) {
-	if (cost === null || cost === undefined) return null;
-	if (cost === -2) return 'Unplayable';
-	if (cost === -1) return 'X⚡';
-	return `${cost}⚡`;
-}
-
+/** The message for one card: name (class), the card art, then how to get it, with buttons to switch art. */
 async function buildCardMessage(card, variantKey = 'base') {
 	const options = variants(card);
 	const variant = options.find(v => v.key === variantKey) ?? options[0] ?? VARIANTS[0];
-	const upgraded = variant.upgraded;
-	const cost = upgraded && card.costPlus !== null ? card.costPlus : card.cost;
-	const stats = [costText(cost), card.starCost !== null ? `${card.starCost}⭐` : null, card.type, card.rarity].filter(Boolean).join(' · ');
+	const source = await getSource(card);
 
-	const embed = new EmbedBuilder()
-		.setTitle(`${card.name}${upgraded ? '+' : ''} (${card.color})`)
-		.setURL(pageUrl(card))
-		.setColor(COLORS[card.color] ?? 0x95A5A6)
-		.setDescription(`${cleanDescription(card.description, upgraded) || '*No text*'}\n\n-# ${stats}`.slice(0, 4096))
-		.addFields({ name: 'How to get it', value: (await getSource(card)).slice(0, 1024) })
-		.setFooter({ text: `${variant.label} · Data: Slay the Spire Wiki (CC BY-SA)` });
-	if (card.images[variant.key]) embed.setImage(card.images[variant.key]);
-
-	const components = [];
+	const container = new ContainerBuilder()
+		.setAccentColor(COLORS[card.color] ?? 0x95A5A6)
+		.addTextDisplayComponents(t => t.setContent(`### [${card.name}${variant.upgraded ? '+' : ''} (${card.color})](${pageUrl(card)})`));
+	if (card.images[variant.key]) {
+		container.addMediaGalleryComponents(g => g.addItems(i => i.setURL(card.images[variant.key]).setDescription(`${card.name} (${variant.label})`)));
+	}
+	container.addTextDisplayComponents(t => t.setContent(`**How to get it**\n${source.slice(0, 3500)}\n-# ${variant.label} · Data: Slay the Spire Wiki (CC BY-SA)`));
 	if (options.length > 1) {
-		components.push(new ActionRowBuilder().addComponents(options.map(v => new ButtonBuilder()
+		container.addActionRowComponents(new ActionRowBuilder().addComponents(options.map(v => new ButtonBuilder()
 			.setCustomId(`sts2:${v.key}:${card.name}`.slice(0, 100))
 			.setLabel(v.label)
 			.setStyle(v.key === variant.key ? ButtonStyle.Primary : ButtonStyle.Secondary)
 			.setDisabled(v.key === variant.key))));
 	}
-	return { embeds: [embed], components };
+	return { components: [container], flags: MessageFlags.IsComponentsV2 };
 }
 
 /** Exact lookup by name, for button presses. */
 const getCard = name => cards.get(normalize(name)) ?? null;
 
-module.exports = { loadCards, findCard, searchCards, getCard, cleanDescription, cleanWikitext, getSource, variants, buildCardMessage, normalize };
+module.exports = { loadCards, findCard, searchCards, getCard, cleanWikitext, getSource, variants, buildCardMessage, normalize };

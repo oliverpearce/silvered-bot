@@ -37,7 +37,8 @@ module.exports = {
 		const card = sts2.getCard(rest.join(':'));
 		if (!card) return interaction.reply({ content: 'That card isn\'t in the card list any more.', flags: MessageFlags.Ephemeral });
 		await interaction.deferUpdate();
-		await interaction.editReply(await sts2.buildCardMessage(card, variant));
+		// embeds: [] clears the old embed layout on cards posted before the new layout.
+		await interaction.editReply({ ...await sts2.buildCardMessage(card, variant), embeds: [] });
 	},
 
 	/** Replies to [[card name]] in a normal message. Up to 3 cards per message; unknown names are ignored. */

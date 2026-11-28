@@ -40,6 +40,7 @@ module.exports = {
             .addFields(
                 { name: '/pokeguess *[generation]*', value: `start a pokemon guessing game!`},
                 { name: '/echo *[input]*', value: `replies with your input!`},
+                { name: '/card *[name]*  or  [[card name]]', value: `look up a Slay the Spire 2 card, with buttons for upgraded and beta art`},
             )
             .setFooter({ text: 'Fun' })
             .setTimestamp()

@@ -7,6 +7,7 @@ const welcome = require('./lib/welcome');
 const modlog = require('./lib/modlog');
 const scheduler = require('./lib/scheduler');
 const presence = require('./lib/presence');
+const sts2 = require('./lib/sts2');
 require('./lib/events'); // registers the event reminder job
 const { createDashboardHandler, startDashboard } = require('./dashboard/server');
 const { createDiscordAuth } = require('./dashboard/auth');
@@ -69,6 +70,7 @@ client.once(Events.ClientReady, async c => {
 		console.error('Failed to register commands:', e);
 	}
 	scheduler.start(c);
+	sts2.loadCards().catch(e => console.warn('[sts2]', e.message));
 });
 
 // Runs on first login and after a full reconnect, which clears the bot's status.
@@ -108,11 +110,19 @@ client.on(Events.MessageDelete, message => {
 	if (message.guildId) roleMenus.remove(message.guildId, message.id);
 });
 
+// [[card name]] lookups for Slay the Spire 2 cards
+client.on(Events.MessageCreate, message => {
+	client.commands.get('card')?.onMessage(message).catch(e => console.error('[card lookup]', e.message));
+});
+
 // Slash commands, autocomplete, role menu buttons and /embed's pop-up forms
 client.on(Events.InteractionCreate, async interaction => {
 	try {
 		if (interaction.isButton() && /^rru?:/.test(interaction.customId)) {
 			return await client.commands.get('rolemenu').handleButton(interaction);
+		}
+		if (interaction.isButton() && interaction.customId.startsWith('sts2:')) {
+			return await client.commands.get('card').handleButton(interaction);
 		}
 		if (interaction.isModalSubmit() && interaction.customId.startsWith('embed:')) {
 			return await client.commands.get('embed').handleModal(interaction);
